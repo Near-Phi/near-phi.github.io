@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neural Network Geometry Visualizer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#c8c8d0;font-family:'Segoe UI',system-ui,sans-serif;overflow-x:hidden}
+h1{text-align:center;padding:18px 0 4px;font-size:1.6em;color:#e0e0f0;letter-spacing:1px}
+.subtitle{text-align:center;color:#6a6a8a;font-size:.85em;margin-bottom:12px}
+
+/* Tabs */
+.tabs{display:flex;justify-content:center;gap:4px;padding:0 10px;flex-wrap:wrap}
+.tab{padding:8px 18px;background:#16162a;border:1px solid #2a2a4a;border-bottom:none;border-radius:8px 8px 0 0;cursor:pointer;color:#8888aa;font-size:.85em;transition:.2s}
+.tab:hover{background:#1e1e3a;color:#aaaacc}
+.tab.active{background:#1a1a35;color:#7eb8ff;border-color:#3a3a6a}
+
+/* Main panels */
+.panel{display:none;padding:14px;max-width:1400px;margin:0 auto}
+.panel.active{display:block}
+
+/* Canvas containers */
+.canvas-row{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.canvas-box{background:#0e0e1a;border:1px solid #222244;border-radius:10px;padding:10px;flex-shrink:0}
+.canvas-box canvas{display:block;border-radius:6px}
+.canvas-label{text-align:center;color:#6a8aaa;font-size:.78em;margin-top:6px}
+
+/* Controls */
+.controls{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:#101020;border:1px solid #222244;border-radius:10px;margin:12px 0;align-items:center;justify-content:center}
+.ctrl-group{display:flex;align-items:center;gap:6px}
+.ctrl-group label{font-size:.8em;color:#7788aa}
+.ctrl-group select,.ctrl-group input[type=number]{background:#1a1a30;border:1px solid #333355;color:#c0c0e0;padding:4px 8px;border-radius:5px;font-size:.8em}
+input[type=range]{-webkit-appearance:none;background:#1a1a30;height:6px;border-radius:3px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;background:#5588cc;border-radius:50%;cursor:pointer}
+button{padding:6px 16px;background:#2a4a7a;border:1px solid #3a5a9a;color:#c0d8ff;border-radius:6px;cursor:pointer;font-size:.8em;transition:.15s}
+button:hover{background:#3a5a9a}
+button.danger{background:#6a2a2a;border-color:#8a3a3a;color:#ffaaaa}
+button.danger:hover{background:#8a3a3a}
+
+/* Insight panels */
+.insight{background:#12122a;border-left:3px solid #4a6aaa;padding:10px 14px;margin:10px 0;border-radius:0 8px 8px 0;font-size:.82em;line-height:1.5}
+.insight strong{color:#88aadd}
+
+/* Stats */
+.stats{display:flex;gap:20px;justify-content:center;padding:8px;font-size:.82em;color:#6a8aaa}
+.stats span{color:#88bbee}
+
+/* Side by side */
+.side-by-side{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+
+/* Loss landscape */
+#loss3d{cursor:grab}
+
+/* Embedding */
+.word-input{background:#1a1a30;border:1px solid #333355;color:#c0c0e0;padding:6px 10px;border-radius:5px;font-size:.82em;width:350px}
+
+/* Responsive */
+@media(max-width:800px){.canvas-row,.side-by-side{flex-direction:column;align-items:center}}
+</style>
+</head>
+<body>
+
+<h1>Neural Network Geometry</h1>
+<p class="subtitle">How neural networks warp, fold, and transform space</p>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab(0)">Grid Transform</div>
+  <div class="tab" onclick="switchTab(1)">Activations</div>
+  <div class="tab" onclick="switchTab(2)">Loss Landscape</div>
+  <div class="tab" onclick="switchTab(3)">Embedding Space</div>
+</div>
+
+<!-- ==================== TAB 0: Grid Transform ==================== -->
+<div class="panel active" id="panel0">
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Network:</label>
+      <select id="networkPreset" onchange="loadPreset()">
+        <option value="xor">XOR Classifier</option>
+        <option value="spiral">Spiral Classifier</option>
+        <option value="circle">Circle Classifier</option>
+        <option value="moons">Two Moons</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Layers:</label>
+      <input type="number" id="numLayers" value="2" min="1" max="5" style="width:50px" onchange="rebuildNetwork()">
+    </div>
+    <div class="ctrl-group">
+      <label>Neurons/layer:</label>
+      <input type="number" id="neuronsPerLayer" value="8" min="2" max="20" style="width:50px" onchange="rebuildNetwork()">
+    </div>
+    <div class="ctrl-group">
+      <label>Activation:</label>
+      <select id="activationFn" onchange="rebuildNetwork()">
+        <option value="relu">ReLU</option>
+        <option value="sigmoid">Sigmoid</option>
+        <option value="tanh">Tanh</option>
+        <option value="gelu">GELU</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>LR:</label>
+      <input type="range" id="learningRate" min="-4" max="0" step="0.1" value="-1.5" oninput="updateLRDisplay()">
+      <span id="lrDisplay" style="font-size:.75em;color:#88aadd;min-width:50px">0.032</span>
+    </div>
+    <button onclick="trainToggle()">Train</button>
+    <button onclick="resetNetwork()" class="danger">Reset</button>
+    <div class="ctrl-group">
+      <label>Layer morph:</label>
+      <input type="range" id="morphSlider" min="0" max="1" step="0.005" value="0" style="width:120px" oninput="renderGridView()">
+    </div>
+    <button onclick="autoMorph()">Animate</button>
+  </div>
+
+  <div class="stats">
+    Epoch: <span id="epochCount">0</span> &nbsp;|&nbsp; Loss: <span id="lossDisplay">—</span> &nbsp;|&nbsp; Accuracy: <span id="accDisplay">—</span>
+  </div>
+
+  <div class="canvas-row">
+    <div class="canvas-box">
+      <canvas id="gridInput" width="400" height="400"></canvas>
+      <div class="canvas-label">Input Space + Data</div>
+    </div>
+    <div class="canvas-box">
+      <canvas id="gridTransform" width="400" height="400"></canvas>
+      <div class="canvas-label" id="transformLabel">Transformed Space (Layer 0→1)</div>
+    </div>
+    <div class="canvas-box">
+      <canvas id="gridDecision" width="400" height="400"></canvas>
+      <div class="canvas-label">Decision Boundary</div>
+    </div>
+  </div>
+
+  <div class="insight" id="gridInsight">
+    <strong>What you're seeing:</strong> The left panel shows a regular grid in input space, colored by position.
+    The middle panel shows how the network deforms that grid — each layer applies a linear transform (rotation + stretch)
+    then an activation function (fold/crease). Use the morph slider to smoothly interpolate between layers.
+    The right panel shows the decision boundary the network has learned.
+  </div>
+</div>
+
+<!-- ==================== TAB 1: Activations ==================== -->
+<div class="panel" id="panel1">
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Blend (linear → activated):</label>
+      <input type="range" id="actBlend" min="0" max="1" step="0.01" value="1" style="width:200px" oninput="renderActivations()">
+    </div>
+  </div>
+
+  <div class="side-by-side" id="actCanvases"></div>
+
+  <div class="insight">
+    <strong>How activations warp space:</strong> Without activation functions, every layer is just a linear map (rotation + scaling).
+    Activations introduce nonlinearity — they <em>fold</em> and <em>crease</em> the space. ReLU sets everything below 0 to 0 (a hard fold).
+    Sigmoid squashes into (0,1). Tanh squashes into (-1,1). GELU applies a smooth probabilistic gate.
+    Use the slider to smoothly transition from the linear pre-activation to the full nonlinear activation.
+  </div>
+</div>
+
+<!-- ==================== TAB 2: Loss Landscape ==================== -->
+<div class="panel" id="panel2">
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Activation:</label>
+      <select id="lossActFn" onchange="computeLossLandscape()">
+        <option value="sigmoid">Sigmoid (smooth)</option>
+        <option value="relu">ReLU (jagged)</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Paths:</label>
+      <input type="number" id="numPaths" value="5" min="1" max="12" style="width:50px">
+    </div>
+    <button onclick="computeLossLandscape()">Recompute</button>
+    <button onclick="runGradientDescent()">Run Gradient Descent</button>
+    <button onclick="resetLossView()" class="danger">Reset</button>
+    <div class="ctrl-group">
+      <label>Rotate:</label>
+      <input type="range" id="lossRotateY" min="0" max="360" value="35" style="width:100px" oninput="renderLossLandscape()">
+    </div>
+    <div class="ctrl-group">
+      <label>Tilt:</label>
+      <input type="range" id="lossRotateX" min="10" max="80" value="55" style="width:100px" oninput="renderLossLandscape()">
+    </div>
+  </div>
+
+  <div class="canvas-row">
+    <div class="canvas-box">
+      <canvas id="loss3d" width="700" height="500"></canvas>
+      <div class="canvas-label">Loss surface as a function of two weights — gradient descent paths shown as colored trails</div>
+    </div>
+  </div>
+
+  <div class="insight">
+    <strong>Loss landscapes are geometric:</strong> Training a neural network = finding the lowest point on a high-dimensional surface.
+    This view shows loss as a function of just 2 weights. Different random initializations (colored balls) follow different gradient paths
+    and can end up in different local minima. Sigmoid activations create smooth rolling hills; ReLU creates sharp ridges and creases.
+  </div>
+</div>
+
+<!-- ==================== TAB 3: Embedding Space ==================== -->
+<div class="panel" id="panel3">
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Word set:</label>
+      <select id="embeddingSet" onchange="loadEmbeddings()">
+        <option value="animals">Animals &amp; Sizes</option>
+        <option value="emotions">Emotions</option>
+        <option value="royalty">Royalty &amp; Gender</option>
+        <option value="programming">Programming</option>
+        <option value="math">Mathematics</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Method:</label>
+      <select id="dimMethod" onchange="loadEmbeddings()">
+        <option value="pca">PCA</option>
+        <option value="tsne">t-SNE</option>
+      </select>
+    </div>
+    <button onclick="loadEmbeddings()">Refresh</button>
+  </div>
+  <div class="ctrl-group" style="padding:8px;justify-content:center;display:flex">
+    <input type="text" class="word-input" id="customWords" placeholder="Enter words separated by commas (for Custom set)" value="king, queen, man, woman, prince, princess, boy, girl">
+  </div>
+
+  <div class="canvas-row">
+    <div class="canvas-box">
+      <canvas id="embeddingCanvas" width="800" height="550"></canvas>
+      <div class="canvas-label">Words positioned by meaning — closer = more similar. Lines connect related pairs.</div>
+    </div>
+  </div>
+
+  <div class="insight">
+    <strong>Meaning IS geometry:</strong> In a trained language model, words with similar meanings cluster together in high-dimensional space.
+    Directions encode relationships: king - man + woman ≈ queen. This 2D projection (via PCA or t-SNE) preserves the essential structure.
+    The distances between points reflect semantic similarity — the geometry of language.
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  UTILITIES
+// ============================================================
+function hsl(h,s,l){return `hsl(${h},${s}%,${l}%)`}
+function lerp(a,b,t){return a+(b-a)*t}
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v))}
+
+// ============================================================
+//  TAB SWITCHING
+// ============================================================
+let currentTab = 0;
+function switchTab(i){
+  document.querySelectorAll('.tab').forEach((t,j)=>t.classList.toggle('active',j===i));
+  document.querySelectorAll('.panel').forEach((p,j)=>p.classList.toggle('active',j===i));
+  currentTab = i;
+  if(i===0) renderGridView();
+  if(i===1) renderActivations();
+  if(i===2) renderLossLandscape();
+  if(i===3) loadEmbeddings();
+}
+
+// ============================================================
+//  NEURAL NETWORK ENGINE
+// ============================================================
+class Network {
+  constructor(layerSizes, actName='relu'){
+    this.sizes = layerSizes;
+    this.actName = actName;
+    this.weights = [];
+    this.biases = [];
+    for(let i=0;i<layerSizes.length-1;i++){
+      let rows=layerSizes[i+1], cols=layerSizes[i];
+      let scale = Math.sqrt(2/cols);
+      let W=[];
+      for(let r=0;r<rows;r++){
+        let row=[];
+        for(let c=0;c<cols;c++) row.push((Math.random()*2-1)*scale);
+        W.push(row);
+      }
+      this.weights.push(W);
+      this.biases.push(new Array(rows).fill(0).map(()=>(Math.random()-0.5)*0.1));
+    }
+  }
+
+  activate(x, name){
+    name = name || this.actName;
+    switch(name){
+      case 'relu': return Math.max(0,x);
+      case 'sigmoid': return 1/(1+Math.exp(-clamp(x,-15,15)));
+      case 'tanh': return Math.tanh(x);
+      case 'gelu': return 0.5*x*(1+Math.tanh(Math.sqrt(2/Math.PI)*(x+0.044715*x*x*x)));
+      default: return x;
+    }
+  }
+
+  activateDeriv(x, name){
+    name = name || this.actName;
+    switch(name){
+      case 'relu': return x>0?1:0;
+      case 'sigmoid': {let s=1/(1+Math.exp(-clamp(x,-15,15)));return s*(1-s);}
+      case 'tanh': {let t=Math.tanh(x);return 1-t*t;}
+      case 'gelu': {
+        let c=Math.sqrt(2/Math.PI);
+        let inner=c*(x+0.044715*x*x*x);
+        let tnh=Math.tanh(inner);
+        let sech2=1-tnh*tnh;
+        let dInner=c*(1+3*0.044715*x*x);
+        return 0.5*(1+tnh)+0.5*x*sech2*dInner;
+      }
+      default: return 1;
+    }
+  }
+
+  forward(input){
+    let activations = [input.slice()];
+    let preActs = [input.slice()];
+    let a = input.slice();
+    for(let l=0;l<this.weights.length;l++){
+      let W=this.weights[l], b=this.biases[l];
+      let z=[];
+      for(let j=0;j<W.length;j++){
+        let s=b[j];
+        for(let k=0;k<a.length;k++) s+=W[j][k]*a[k];
+        z.push(s);
+      }
+      preActs.push(z.slice());
+      let isLast = l===this.weights.length-1;
+      a = z.map(v=> isLast ? this.activate(v,'sigmoid') : this.activate(v));
+      activations.push(a.slice());
+    }
+    return {activations, preActs};
+  }
+
+  // Get intermediate representation at fractional layer
+  forwardToLayer(input, layerFrac){
+    let layerInt = Math.floor(layerFrac);
+    let frac = layerFrac - layerInt;
+    let a = input.slice();
+    for(let l=0;l<Math.min(layerInt, this.weights.length);l++){
+      let W=this.weights[l], b=this.biases[l];
+      let z=[];
+      for(let j=0;j<W.length;j++){
+        let s=b[j];
+        for(let k=0;k<a.length;k++) s+=W[j][k]*a[k];
+        z.push(s);
+      }
+      let isLast = l===this.weights.length-1;
+      a = z.map(v=> isLast ? this.activate(v,'sigmoid') : this.activate(v));
+    }
+    if(layerInt < this.weights.length && frac > 0){
+      let l = layerInt;
+      let W=this.weights[l], b=this.biases[l];
+      let z=[];
+      for(let j=0;j<W.length;j++){
+        let s=b[j];
+        for(let k=0;k<a.length;k++) s+=W[j][k]*a[k];
+        z.push(s);
+      }
+      let isLast = l===this.weights.length-1;
+      let activated = z.map(v=> isLast ? this.activate(v,'sigmoid') : this.activate(v));
+      // Interpolate between pre-activation (extended a) and post-activation
+      // We need both to have same dimensionality
+      // Linear part: z. Activated part: activated.
+      // But input a may have different dim than z.
+      // For smooth morph: lerp between [a padded] and [activated]
+      // Actually we lerp the sub-steps: first frac<0.5 does linear transform, then frac>0.5 does activation
+      if(frac < 0.5){
+        let t = frac * 2; // 0..1 for the linear part
+        // lerp from a (padded/projected) to z
+        let result = [];
+        for(let j=0;j<z.length;j++){
+          // project a into the target space linearly
+          let target = z[j];
+          // source: if j < a.length, use a[j], else 0
+          let source = j < a.length ? a[j] : 0;
+          result.push(lerp(source, target, t));
+        }
+        return result;
+      } else {
+        let t = (frac-0.5)*2; // 0..1 for activation part
+        return z.map((v,j) => lerp(v, activated[j], t));
+      }
+    }
+    return a;
+  }
+
+  train(data, lr){
+    let totalLoss=0, correct=0;
+    for(let d of data){
+      let {activations, preActs} = this.forward(d.x);
+      let out = activations[activations.length-1];
+      let target = d.y;
+      totalLoss += -target*Math.log(out[0]+1e-10)-(1-target)*Math.log(1-out[0]+1e-10);
+      if((out[0]>0.5?1:0)===target) correct++;
+
+      // Backprop
+      let deltas = [];
+      // Output layer delta
+      let outDelta = [out[0]-target];
+      deltas[this.weights.length-1] = outDelta;
+
+      for(let l=this.weights.length-2;l>=0;l--){
+        let W_next = this.weights[l+1];
+        let delta_next = deltas[l+1];
+        let delta = [];
+        for(let j=0;j<this.weights[l].length;j++){
+          let s=0;
+          for(let k=0;k<delta_next.length;k++) s+=W_next[k][j]*delta_next[k];
+          s *= this.activateDeriv(preActs[l+1][j]);
+          delta.push(s);
+        }
+        deltas[l]=delta;
+      }
+
+      for(let l=0;l<this.weights.length;l++){
+        let delta=deltas[l];
+        let aIn=activations[l];
+        for(let j=0;j<this.weights[l].length;j++){
+          for(let k=0;k<this.weights[l][j].length;k++){
+            this.weights[l][j][k] -= lr*delta[j]*aIn[k];
+          }
+          this.biases[l][j] -= lr*delta[j];
+        }
+      }
+    }
+    return {loss: totalLoss/data.length, acc: correct/data.length};
+  }
+}
+
+// ============================================================
+//  DATA GENERATORS
+// ============================================================
+function genXOR(n=200){
+  let data=[];
+  for(let i=0;i<n;i++){
+    let x1=Math.random()*2-1, x2=Math.random()*2-1;
+    let y=(x1>0)!==(x2>0)?1:0;
+    data.push({x:[x1,x2],y});
+  }
+  return data;
+}
+
+function genSpiral(n=300){
+  let data=[];
+  for(let i=0;i<n/2;i++){
+    let t=i/(n/2)*3*Math.PI+Math.random()*0.3;
+    let r=t/(3*Math.PI)*1.2;
+    data.push({x:[r*Math.cos(t)+Math.random()*0.08, r*Math.sin(t)+Math.random()*0.08],y:0});
+    data.push({x:[r*Math.cos(t+Math.PI)+Math.random()*0.08, r*Math.sin(t+Math.PI)+Math.random()*0.08],y:1});
+  }
+  return data;
+}
+
+function genCircle(n=200){
+  let data=[];
+  for(let i=0;i<n;i++){
+    let x1=Math.random()*2-1, x2=Math.random()*2-1;
+    let y=x1*x1+x2*x2<0.5?1:0;
+    data.push({x:[x1,x2],y});
+  }
+  return data;
+}
+
+function genMoons(n=300){
+  let data=[];
+  for(let i=0;i<n/2;i++){
+    let t=Math.PI*i/(n/2);
+    data.push({x:[Math.cos(t)+Math.random()*0.12, Math.sin(t)+Math.random()*0.12],y:0});
+    data.push({x:[1-Math.cos(t)+Math.random()*0.12, 0.5-Math.sin(t)+Math.random()*0.12],y:1});
+  }
+  return data;
+}
+
+// ============================================================
+//  GRID TRANSFORM (TAB 0)
+// ============================================================
+let net, trainData, epoch=0, training=false, trainInterval=null;
+let morphAnimId = null;
+
+function getDataGen(){
+  switch(document.getElementById('networkPreset').value){
+    case 'xor': return genXOR;
+    case 'spiral': return genSpiral;
+    case 'circle': return genCircle;
+    case 'moons': return genMoons;
+    default: return genXOR;
+  }
+}
+
+function loadPreset(){
+  let p=document.getElementById('networkPreset').value;
+  let layers=document.getElementById('numLayers');
+  let neurons=document.getElementById('neuronsPerLayer');
+  switch(p){
+    case 'xor': layers.value=2; neurons.value=6; break;
+    case 'spiral': layers.value=3; neurons.value=12; break;
+    case 'circle': layers.value=2; neurons.value=8; break;
+    case 'moons': layers.value=2; neurons.value=8; break;
+  }
+  rebuildNetwork();
+}
+
+function rebuildNetwork(){
+  let nLayers=parseInt(document.getElementById('numLayers').value);
+  let nNeurons=parseInt(document.getElementById('neuronsPerLayer').value);
+  let act=document.getElementById('activationFn').value;
+  let sizes=[2];
+  for(let i=0;i<nLayers;i++) sizes.push(nNeurons);
+  sizes.push(1);
+  net=new Network(sizes, act);
+  trainData=getDataGen()();
+  epoch=0;
+  document.getElementById('epochCount').textContent='0';
+  document.getElementById('lossDisplay').textContent='—';
+  document.getElementById('accDisplay').textContent='—';
+  document.getElementById('morphSlider').max = net.weights.length;
+  document.getElementById('morphSlider').value = 0;
+  renderGridView();
+}
+
+function updateLRDisplay(){
+  let v=parseFloat(document.getElementById('learningRate').value);
+  document.getElementById('lrDisplay').textContent=Math.pow(10,v).toFixed(4);
+}
+
+function trainToggle(){
+  if(training){
+    training=false;
+    clearInterval(trainInterval);
+    trainInterval=null;
+  } else {
+    training=true;
+    trainInterval=setInterval(()=>{
+      let lr=Math.pow(10,parseFloat(document.getElementById('learningRate').value));
+      for(let i=0;i<10;i++){
+        let r=net.train(trainData,lr);
+        epoch++;
+        if(epoch%10===0){
+          document.getElementById('epochCount').textContent=epoch;
+          document.getElementById('lossDisplay').textContent=r.loss.toFixed(4);
+          document.getElementById('accDisplay').textContent=(r.acc*100).toFixed(1)+'%';
+        }
+      }
+      renderGridView();
+    },30);
+  }
+}
+
+function resetNetwork(){
+  training=false;
+  if(trainInterval) clearInterval(trainInterval);
+  trainInterval=null;
+  rebuildNetwork();
+}
+
+function autoMorph(){
+  if(morphAnimId) cancelAnimationFrame(morphAnimId);
+  let slider=document.getElementById('morphSlider');
+  let maxVal=parseFloat(slider.max);
+  slider.value=0;
+  let startTime=performance.now();
+  let duration=3000; // 3 seconds for full morph
+  function step(t){
+    let progress=(t-startTime)/duration;
+    if(progress>1){slider.value=maxVal;renderGridView();return;}
+    slider.value=progress*maxVal;
+    renderGridView();
+    morphAnimId=requestAnimationFrame(step);
+  }
+  morphAnimId=requestAnimationFrame(step);
+}
+
+function renderGridView(){
+  if(!net) return;
+  let morphVal=parseFloat(document.getElementById('morphSlider').value);
+  let layerIdx=Math.floor(morphVal);
+  if(layerIdx>=net.weights.length) layerIdx=net.weights.length;
+  document.getElementById('transformLabel').textContent=
+    `Transformed Space (morph: ${morphVal.toFixed(2)} / ${net.weights.length})`;
+
+  drawInputSpace();
+  drawTransformedGrid(morphVal);
+  drawDecisionBoundary();
+  updateGridInsight(morphVal);
+}
+
+function drawInputSpace(){
+  let c=document.getElementById('gridInput');
+  let ctx=c.getContext('2d');
+  ctx.fillStyle='#0a0a14';
+  ctx.fillRect(0,0,400,400);
+
+  // Draw grid
+  let res=25;
+  ctx.lineWidth=0.5;
+  for(let i=0;i<=res;i++){
+    let t=i/res;
+    // vertical lines
+    ctx.strokeStyle=hsl(t*270,50,25);
+    ctx.beginPath();
+    for(let j=0;j<=res;j++){
+      let x=20+t*360, y=20+(j/res)*360;
+      j===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+    // horizontal
+    ctx.strokeStyle=hsl(t*270+90,50,25);
+    ctx.beginPath();
+    for(let j=0;j<=res;j++){
+      let x=20+(j/res)*360, y=20+t*360;
+      j===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  // Draw data points
+  for(let d of trainData){
+    let px=200+d.x[0]*160, py=200+d.x[1]*160;
+    ctx.beginPath();
+    ctx.arc(px,py,3,0,Math.PI*2);
+    ctx.fillStyle=d.y===1?'#ff6688':'#6688ff';
+    ctx.fill();
+  }
+}
+
+function drawTransformedGrid(morphVal){
+  let c=document.getElementById('gridTransform');
+  let ctx=c.getContext('2d');
+  ctx.fillStyle='#0a0a14';
+  ctx.fillRect(0,0,400,400);
+
+  let res=25;
+  // Collect transformed grid points
+  let grid=[];
+  for(let i=0;i<=res;i++){
+    let row=[];
+    for(let j=0;j<=res;j++){
+      let x=(i/res)*2-1, y=(j/res)*2-1;
+      let out=net.forwardToLayer([x,y],morphVal);
+      // Project to 2D: use first two dims, or if 1D pad with 0
+      let px=out[0]||0, py=out.length>1?out[1]:0;
+      row.push([px,py]);
+    }
+    grid.push(row);
+  }
+
+  // Find bounds for normalization
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(let row of grid)for(let p of row){
+    minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);
+    minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);
+  }
+  let rangeX=maxX-minX||1, rangeY=maxY-minY||1;
+  let range=Math.max(rangeX,rangeY);
+  let cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+
+  function mapP(p){
+    return [200+(p[0]-cx)/range*340, 200+(p[1]-cy)/range*340];
+  }
+
+  // Draw grid lines
+  ctx.lineWidth=0.8;
+  for(let i=0;i<=res;i++){
+    let t=i/res;
+    ctx.strokeStyle=hsl(t*270,60,35);
+    ctx.beginPath();
+    for(let j=0;j<=res;j++){
+      let [x,y]=mapP(grid[i][j]);
+      j===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle=hsl(t*270+90,60,35);
+    ctx.beginPath();
+    for(let j=0;j<=res;j++){
+      let [x,y]=mapP(grid[j][i]);
+      j===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  // Draw transformed data
+  for(let d of trainData){
+    let out=net.forwardToLayer(d.x, morphVal);
+    let px=out[0]||0, py=out.length>1?out[1]:0;
+    let [sx,sy]=mapP([px,py]);
+    ctx.beginPath();
+    ctx.arc(sx,sy,3,0,Math.PI*2);
+    ctx.fillStyle=d.y===1?'#ff6688':'#6688ff';
+    ctx.fill();
+  }
+}
+
+function drawDecisionBoundary(){
+  let c=document.getElementById('gridDecision');
+  let ctx=c.getContext('2d');
+  let imgData=ctx.createImageData(400,400);
+  let res=100;
+  for(let i=0;i<res;i++){
+    for(let j=0;j<res;j++){
+      let x=(i/res)*2-1, y=(j/res)*2-1;
+      let {activations}=net.forward([x,y]);
+      let out=activations[activations.length-1][0];
+      let r=Math.floor(out*255);
+      let b=Math.floor((1-out)*255);
+      let px=Math.floor(i/res*400), py=Math.floor(j/res*400);
+      let w=Math.ceil(400/res), h=Math.ceil(400/res);
+      for(let di=0;di<w&&px+di<400;di++){
+        for(let dj=0;dj<h&&py+dj<400;dj++){
+          let idx=((py+dj)*400+(px+di))*4;
+          imgData.data[idx]=r*0.5;
+          imgData.data[idx+1]=30;
+          imgData.data[idx+2]=b*0.5;
+          imgData.data[idx+3]=180;
+        }
+      }
+    }
+  }
+  ctx.putImageData(imgData,0,0);
+
+  // Draw data on top
+  for(let d of trainData){
+    let px=200+d.x[0]*160, py=200+d.x[1]*160;
+    ctx.beginPath();
+    ctx.arc(px,py,3,0,Math.PI*2);
+    ctx.fillStyle=d.y===1?'#ff88aa':'#88aaff';
+    ctx.strokeStyle='#000';
+    ctx.lineWidth=0.5;
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Draw decision boundary contour (0.5 line)
+  ctx.strokeStyle='#ffffff88';
+  ctx.lineWidth=1.5;
+  for(let i=0;i<res-1;i++){
+    for(let j=0;j<res-1;j++){
+      let x0=(i/res)*2-1,y0=(j/res)*2-1;
+      let x1=((i+1)/res)*2-1,y1=((j+1)/res)*2-1;
+      let v00=net.forward([x0,y0]).activations.at(-1)[0];
+      let v10=net.forward([x1,y0]).activations.at(-1)[0];
+      let v01=net.forward([x0,y1]).activations.at(-1)[0];
+      let v11=net.forward([x1,y1]).activations.at(-1)[0];
+      // Simple marching squares for 0.5 contour
+      let thresh=0.5;
+      let bits=((v00>thresh)<<3)|((v10>thresh)<<2)|((v01>thresh)<<1)|(v11>thresh);
+      if(bits>0&&bits<15){
+        let cx0=200+x0*160,cy0=200+y0*160;
+        let cx1=200+x1*160,cy1=200+y1*160;
+        ctx.beginPath();
+        ctx.moveTo((cx0+cx1)/2,cy0);
+        ctx.lineTo((cx0+cx1)/2,cy1);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function updateGridInsight(morphVal){
+  let layerIdx=Math.floor(morphVal);
+  let frac=morphVal-layerIdx;
+  let el=document.getElementById('gridInsight');
+  let actName=document.getElementById('activationFn').value;
+  let insights = [];
+  if(morphVal<0.01){
+    insights.push("Viewing the <strong>original input space</strong> — a regular grid. Each layer will deform this grid.");
+  } else if(frac<0.5 && frac>0){
+    insights.push(`Layer ${layerIdx+1}: <strong>Linear transform phase</strong> — rotation + stretching. The grid is being warped by the weight matrix.`);
+  } else if(frac>=0.5){
+    let actDesc = {relu:"<strong>ReLU creates creases</strong> — everything below zero gets folded flat.",
+      sigmoid:"<strong>Sigmoid squashes</strong> — compresses the space into a bounded region.",
+      tanh:"<strong>Tanh squashes symmetrically</strong> — maps everything to (-1,1).",
+      gelu:"<strong>GELU gates probabilistically</strong> — a smooth version of ReLU."};
+    insights.push(`Layer ${layerIdx+1}: <strong>Activation phase</strong> — ${actDesc[actName]||''}`);
+  } else {
+    insights.push(`After ${layerIdx} layers: the space has been composed of ${layerIdx} rotations + folds.`);
+    insights.push("\"<em>Deep networks compose many simple warps into complex boundaries.</em>\"");
+  }
+  el.innerHTML = insights.join('<br>');
+}
+
+// ============================================================
+//  ACTIVATION VISUALIZER (TAB 1)
+// ============================================================
+let actCanvasesReady = false;
+
+function setupActCanvases(){
+  let container=document.getElementById('actCanvases');
+  container.innerHTML='';
+  let fns=['relu','sigmoid','tanh','gelu'];
+  let names=['ReLU','Sigmoid','Tanh','GELU'];
+  for(let i=0;i<4;i++){
+    let box=document.createElement('div');
+    box.className='canvas-box';
+    let cv=document.createElement('canvas');
+    cv.width=300;cv.height=300;
+    cv.id='actCanvas_'+fns[i];
+    box.appendChild(cv);
+    let lbl=document.createElement('div');
+    lbl.className='canvas-label';
+    lbl.textContent=names[i];
+    box.appendChild(lbl);
+    container.appendChild(box);
+  }
+  actCanvasesReady=true;
+}
+
+function renderActivations(){
+  if(!actCanvasesReady) setupActCanvases();
+  let blend=parseFloat(document.getElementById('actBlend').value);
+  let fns=['relu','sigmoid','tanh','gelu'];
+
+  // Create a small random 2→2 network for each
+  let seed=42;
+  function seededRand(){seed=(seed*16807)%2147483647;return(seed-1)/2147483646;}
+
+  for(let fn of fns){
+    let cv=document.getElementById('actCanvas_'+fn);
+    let ctx=cv.getContext('2d');
+    ctx.fillStyle='#0a0a14';
+    ctx.fillRect(0,0,300,300);
+
+    // Random weight matrix
+    seed=42;
+    let W=[[seededRand()*2-1,seededRand()*2-1],[seededRand()*2-1,seededRand()*2-1]];
+    let b=[seededRand()*0.5-0.25,seededRand()*0.5-0.25];
+
+    let res=20;
+    let tempNet = new Network([2,2],'relu'); // dummy
+
+    function applyBlended(x,y){
+      // Linear transform
+      let z0=W[0][0]*x+W[0][1]*y+b[0];
+      let z1=W[1][0]*x+W[1][1]*y+b[1];
+      // Activated
+      let a0=tempNet.activate(z0,fn);
+      let a1=tempNet.activate(z1,fn);
+      // Blend
+      return [lerp(z0,a0,blend), lerp(z1,a1,blend)];
+    }
+
+    // Compute grid
+    let grid=[];
+    for(let i=0;i<=res;i++){
+      let row=[];
+      for(let j=0;j<=res;j++){
+        let x=(i/res)*2-1, y=(j/res)*2-1;
+        row.push(applyBlended(x,y));
+      }
+      grid.push(row);
+    }
+
+    // Normalize
+    let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+    for(let row of grid)for(let p of row){
+      minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);
+      minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);
+    }
+    let range=Math.max(maxX-minX,maxY-minY)||1;
+    let cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+
+    function mapP(p){return[150+(p[0]-cx)/range*260, 150+(p[1]-cy)/range*260];}
+
+    for(let i=0;i<=res;i++){
+      let t=i/res;
+      ctx.strokeStyle=hsl(t*270,60,40);
+      ctx.lineWidth=0.8;
+      ctx.beginPath();
+      for(let j=0;j<=res;j++){
+        let[x,y]=mapP(grid[i][j]);
+        j===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle=hsl(t*270+90,60,40);
+      ctx.beginPath();
+      for(let j=0;j<=res;j++){
+        let[x,y]=mapP(grid[j][i]);
+        j===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+    }
+
+    // 1D function plot overlay
+    ctx.strokeStyle='#ffffffaa';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    for(let i=0;i<300;i++){
+      let x=(i/300)*6-3;
+      let y_linear = x;
+      let y_act = tempNet.activate(x,fn);
+      let y = lerp(y_linear, y_act, blend);
+      let py = 150 - y*40;
+      i===0?ctx.moveTo(i,py):ctx.lineTo(i,py);
+    }
+    ctx.stroke();
+
+    // Zero axes
+    ctx.strokeStyle='#ffffff22';
+    ctx.lineWidth=0.5;
+    ctx.beginPath();ctx.moveTo(150,0);ctx.lineTo(150,300);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,150);ctx.lineTo(300,150);ctx.stroke();
+  }
+}
+
+// ============================================================
+//  LOSS LANDSCAPE (TAB 2)
+// ============================================================
+let lossSurface=null, gdPaths=[], lossAnimId=null;
+let lossDragState = {dragging:false, lastX:0, lastY:0};
+
+function computeLossLandscape(){
+  let actFn = document.getElementById('lossActFn').value;
+  // Simple 2-1-1 network, vary 2 weights, fix everything else
+  let res=60;
+  lossSurface=[];
+
+  // XOR data
+  let data=[{x:[0,0],y:0},{x:[0,1],y:1},{x:[1,0],y:1},{x:[1,1],y:0}];
+
+  // Fixed weights except w1, w2 (first two weights of hidden layer)
+  let fixedW = [[1.5, -1.5], [-1.5, 1.5]]; // good XOR weights
+  let fixedB = [-0.5, -0.5];
+  let outW = [[1.5, 1.5]];
+  let outB = [-0.5];
+
+  for(let i=0;i<res;i++){
+    let row=[];
+    for(let j=0;j<res;j++){
+      let w1=(i/res)*8-4, w2=(j/res)*8-4;
+      // Override first two weights
+      let W0 = [[w1, fixedW[0][1]], [w2, fixedW[1][1]]];
+      let loss=0;
+      for(let d of data){
+        // Forward pass
+        let h=[];
+        for(let k=0;k<2;k++){
+          let z=fixedB[k];
+          for(let m=0;m<2;m++) z+=W0[k][m]*d.x[m];
+          if(actFn==='relu') h.push(Math.max(0,z));
+          else h.push(1/(1+Math.exp(-z)));
+        }
+        let o=outB[0];
+        for(let k=0;k<2;k++) o+=outW[0][k]*h[k];
+        let pred=1/(1+Math.exp(-o));
+        loss += -d.y*Math.log(pred+1e-10)-(1-d.y)*Math.log(1-pred+1e-10);
+      }
+      row.push(loss/4);
+    }
+    lossSurface.push(row);
+  }
+  gdPaths=[];
+  renderLossLandscape();
+}
+
+function runGradientDescent(){
+  if(!lossSurface) computeLossLandscape();
+  let nPaths=parseInt(document.getElementById('numPaths').value);
+  let res=lossSurface.length;
+  gdPaths=[];
+
+  for(let p=0;p<nPaths;p++){
+    let x=Math.random()*(res-2)+1, y=Math.random()*(res-2)+1;
+    let path=[{x,y}];
+    let lr=0.5;
+    for(let step=0;step<200;step++){
+      let ix=Math.floor(x), iy=Math.floor(y);
+      ix=clamp(ix,1,res-2); iy=clamp(iy,1,res-2);
+      let dldx=(lossSurface[ix+1][iy]-lossSurface[ix-1][iy])/2;
+      let dldy=(lossSurface[ix][iy+1]-lossSurface[ix][iy-1])/2;
+      x-=lr*dldx;
+      y-=lr*dldy;
+      x=clamp(x,0,res-1);
+      y=clamp(y,0,res-1);
+      path.push({x,y});
+    }
+    gdPaths.push(path);
+  }
+
+  // Animate
+  let frame=0;
+  if(lossAnimId) cancelAnimationFrame(lossAnimId);
+  function step(){
+    frame=Math.min(frame+2,200);
+    renderLossLandscape(frame);
+    if(frame<200) lossAnimId=requestAnimationFrame(step);
+  }
+  lossAnimId=requestAnimationFrame(step);
+}
+
+function resetLossView(){
+  gdPaths=[];
+  if(lossAnimId) cancelAnimationFrame(lossAnimId);
+  computeLossLandscape();
+}
+
+function renderLossLandscape(maxPathFrame=200){
+  if(!lossSurface) return;
+  let c=document.getElementById('loss3d');
+  let ctx=c.getContext('2d');
+  ctx.fillStyle='#0a0a14';
+  ctx.fillRect(0,0,700,500);
+
+  let res=lossSurface.length;
+  let rotY=(parseFloat(document.getElementById('lossRotateY').value))*Math.PI/180;
+  let rotX=(parseFloat(document.getElementById('lossRotateX').value))*Math.PI/180;
+
+  // Find min/max loss for normalization
+  let minL=Infinity,maxL=-Infinity;
+  for(let r of lossSurface)for(let v of r){minL=Math.min(minL,v);maxL=Math.max(maxL,v);}
+  let rangeL=maxL-minL||1;
+
+  // 3D projection
+  function project(i,j,loss){
+    let x=(i/res-0.5)*2, z=(j/res-0.5)*2;
+    let y=-(loss-minL)/rangeL*1.2;
+    // Rotate around Y axis
+    let rx=x*Math.cos(rotY)-z*Math.sin(rotY);
+    let rz=x*Math.sin(rotY)+z*Math.cos(rotY);
+    // Tilt
+    let ry=y*Math.cos(rotX)-rz*Math.sin(rotX);
+    let rz2=y*Math.sin(rotX)+rz*Math.cos(rotX);
+    let scale=200;
+    let sx=350+rx*scale;
+    let sy=280-ry*scale;
+    return {sx,sy,depth:rz2};
+  }
+
+  // Collect faces for painter's algorithm
+  let step=2;
+  let faces=[];
+  for(let i=0;i<res-step;i+=step){
+    for(let j=0;j<res-step;j+=step){
+      let v=lossSurface[i][j];
+      let p0=project(i,j,v);
+      let p1=project(i+step,j,lossSurface[Math.min(i+step,res-1)][j]);
+      let p2=project(i+step,j+step,lossSurface[Math.min(i+step,res-1)][Math.min(j+step,res-1)]);
+      let p3=project(i,j+step,lossSurface[i][Math.min(j+step,res-1)]);
+      let avgDepth=(p0.depth+p1.depth+p2.depth+p3.depth)/4;
+      let avgLoss=(v+lossSurface[Math.min(i+step,res-1)][j]+
+        lossSurface[Math.min(i+step,res-1)][Math.min(j+step,res-1)]+
+        lossSurface[i][Math.min(j+step,res-1)])/4;
+      let normLoss=(avgLoss-minL)/rangeL;
+      faces.push({pts:[p0,p1,p2,p3],depth:avgDepth,normLoss});
+    }
+  }
+
+  faces.sort((a,b)=>a.depth-b.depth);
+
+  for(let f of faces){
+    let h=lerp(240,0,f.normLoss); // blue (low) to red (high)
+    let l=lerp(20,45,1-f.normLoss*0.5);
+    ctx.fillStyle=hsl(h,60,l);
+    ctx.strokeStyle=hsl(h,40,l+10);
+    ctx.lineWidth=0.3;
+    ctx.beginPath();
+    ctx.moveTo(f.pts[0].sx,f.pts[0].sy);
+    for(let k=1;k<4;k++) ctx.lineTo(f.pts[k].sx,f.pts[k].sy);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Draw gradient descent paths
+  let colors=['#ff4466','#44ff88','#ffaa22','#44aaff','#ff44ff','#88ff44','#ff8844','#44ffff','#aa44ff','#ffff44','#ff4488','#44ff44'];
+  for(let p=0;p<gdPaths.length;p++){
+    let path=gdPaths[p];
+    let color=colors[p%colors.length];
+    ctx.strokeStyle=color+'cc';
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    let maxF=Math.min(maxPathFrame,path.length-1);
+    for(let k=0;k<=maxF;k++){
+      let ix=Math.floor(path[k].x), iy=Math.floor(path[k].y);
+      ix=clamp(ix,0,res-1);iy=clamp(iy,0,res-1);
+      let loss=lossSurface[ix][iy];
+      let proj=project(path[k].x,path[k].y,loss);
+      k===0?ctx.moveTo(proj.sx,proj.sy):ctx.lineTo(proj.sx,proj.sy);
+    }
+    ctx.stroke();
+
+    // Ball at current position
+    let last=path[Math.min(maxF,path.length-1)];
+    let lix=clamp(Math.floor(last.x),0,res-1),liy=clamp(Math.floor(last.y),0,res-1);
+    let lp=project(last.x,last.y,lossSurface[lix][liy]);
+    ctx.beginPath();
+    ctx.arc(lp.sx,lp.sy,5,0,Math.PI*2);
+    ctx.fillStyle=color;
+    ctx.fill();
+    ctx.strokeStyle='#000';
+    ctx.lineWidth=1;
+    ctx.stroke();
+  }
+}
+
+// Mouse drag for loss landscape rotation
+(function(){
+  let c = document.getElementById('loss3d');
+  if(!c) return;
+  c.addEventListener('mousedown',e=>{
+    lossDragState.dragging=true;
+    lossDragState.lastX=e.clientX;
+    lossDragState.lastY=e.clientY;
+  });
+  window.addEventListener('mousemove',e=>{
+    if(!lossDragState.dragging) return;
+    let dx=e.clientX-lossDragState.lastX;
+    let dy=e.clientY-lossDragState.lastY;
+    let ry=document.getElementById('lossRotateY');
+    let rx=document.getElementById('lossRotateX');
+    ry.value=(parseFloat(ry.value)+dx*0.5+360)%360;
+    rx.value=clamp(parseFloat(rx.value)-dy*0.3,10,80);
+    lossDragState.lastX=e.clientX;
+    lossDragState.lastY=e.clientY;
+    renderLossLandscape();
+  });
+  window.addEventListener('mouseup',()=>{lossDragState.dragging=false;});
+})();
+
+// ============================================================
+//  EMBEDDING SPACE (TAB 3)
+// ============================================================
+
+// Pre-defined embeddings (manually crafted to show meaningful structure)
+const embeddingSets = {
+  animals: {
+    words: ['mouse','cat','dog','horse','elephant','whale','eagle','sparrow','goldfish','shark','ant','butterfly'],
+    // dims: size, domesticity, flight, aquatic
+    vecs: [
+      [0.1,0.3,0,0],[0.2,0.8,0,0],[0.3,0.9,0,0],[0.6,0.7,0,0],[0.9,0.2,0,0],[1,0,0,0.9],
+      [0.3,0.1,0.9,0],[0.1,0.2,0.8,0],[0.05,0.5,0,0.7],[0.7,0,0,0.95],[0.01,0,0,0],[0.05,0.1,0.7,0]
+    ],
+    links: [[0,1],[1,2],[2,3],[3,4],[6,7],[9,5],[10,11]]
+  },
+  emotions: {
+    words: ['joy','happiness','ecstasy','sadness','grief','anger','rage','fear','anxiety','calm','peace','love','hate','surprise','disgust'],
+    vecs: [
+      [0.8,0.7],[0.75,0.65],[0.95,0.9],[0.2,0.3],[0.1,0.5],[0.3,0.8],[0.2,0.95],[0.25,0.7],[0.35,0.6],
+      [0.7,0.1],[0.75,0.05],[0.85,0.4],[0.15,0.85],[0.6,0.8],[0.2,0.6]
+    ],
+    links: [[0,1],[1,2],[3,4],[5,6],[7,8],[9,10],[0,11],[5,12]]
+  },
+  royalty: {
+    words: ['king','queen','prince','princess','man','woman','boy','girl','father','mother','uncle','aunt'],
+    // dims: royalty, gender, age
+    vecs: [
+      [0.9,0.1,0.8],[0.9,0.9,0.8],[0.8,0.1,0.4],[0.8,0.9,0.4],
+      [0.1,0.1,0.7],[0.1,0.9,0.7],[0.1,0.1,0.2],[0.1,0.9,0.2],
+      [0.2,0.1,0.8],[0.2,0.9,0.8],[0.15,0.1,0.7],[0.15,0.9,0.7]
+    ],
+    links: [[0,1],[2,3],[4,5],[6,7],[0,4],[1,5],[2,6],[3,7],[8,9],[10,11]]
+  },
+  programming: {
+    words: ['Python','JavaScript','Java','C++','Rust','Go','HTML','CSS','SQL','React','Django','TensorFlow','function','class','variable','loop'],
+    vecs: [
+      [0.5,0.8],[0.6,0.7],[0.4,0.5],[0.3,0.3],[0.35,0.25],[0.45,0.35],
+      [0.8,0.9],[0.85,0.85],[0.3,0.9],[0.7,0.65],[0.55,0.75],[0.5,0.6],
+      [0.5,0.4],[0.4,0.45],[0.45,0.5],[0.5,0.35]
+    ],
+    links: [[0,10],[0,11],[1,9],[6,7],[12,13],[13,14]]
+  },
+  math: {
+    words: ['addition','subtraction','multiplication','division','integral','derivative','matrix','vector','probability','statistics','geometry','topology','algebra','calculus','pi','infinity'],
+    vecs: [
+      [0.2,0.3],[0.2,0.35],[0.25,0.25],[0.25,0.3],[0.6,0.7],[0.6,0.65],
+      [0.4,0.5],[0.35,0.5],[0.7,0.3],[0.75,0.35],[0.5,0.8],[0.55,0.85],
+      [0.3,0.6],[0.6,0.68],[0.45,0.4],[0.5,0.3]
+    ],
+    links: [[0,1],[2,3],[4,5],[6,7],[8,9],[10,11],[4,13],[12,6]]
+  }
+};
+
+function loadEmbeddings(){
+  let setName=document.getElementById('embeddingSet').value;
+  let method=document.getElementById('dimMethod').value;
+
+  let words, vecs2d, links;
+
+  if(setName==='custom'){
+    let raw=document.getElementById('customWords').value.split(',').map(s=>s.trim()).filter(s=>s);
+    if(raw.length<2) return;
+    // Generate pseudo-embeddings based on character features
+    words=raw;
+    let vecs=[];
+    for(let w of words){
+      let v=[];
+      for(let d=0;d<8;d++){
+        let sum=0;
+        for(let i=0;i<w.length;i++) sum+=Math.sin(w.charCodeAt(i)*(d+1)*0.1+d*7);
+        v.push(sum/w.length);
+      }
+      vecs.push(v);
+    }
+    // Auto-detect links: connect words that share first letter or similar length
+    links=[];
+    for(let i=0;i<words.length;i++){
+      for(let j=i+1;j<words.length;j++){
+        if(words[i][0].toLowerCase()===words[j][0].toLowerCase() || Math.abs(words[i].length-words[j].length)<=1){
+          links.push([i,j]);
+        }
+      }
+    }
+    vecs2d = reduceTo2D(vecs, method);
+  } else {
+    let set=embeddingSets[setName];
+    words=set.words;
+    links=set.links;
+    vecs2d = reduceTo2D(set.vecs, method);
+  }
+
+  renderEmbeddings(words, vecs2d, links);
+}
+
+function reduceTo2D(vecs, method){
+  if(vecs[0].length<=2){
+    return vecs.map(v=>[v[0]||0,v[1]||0]);
+  }
+
+  if(method==='pca'){
+    // Simple PCA
+    let n=vecs.length, d=vecs[0].length;
+    // Center
+    let mean=new Array(d).fill(0);
+    for(let v of vecs) for(let i=0;i<d;i++) mean[i]+=v[i]/n;
+    let centered=vecs.map(v=>v.map((x,i)=>x-mean[i]));
+
+    // Covariance (simplified: power iteration for top 2 eigenvectors)
+    function dot(a,b){let s=0;for(let i=0;i<a.length;i++)s+=a[i]*b[i];return s;}
+    function normalize(v){let m=Math.sqrt(dot(v,v))||1;return v.map(x=>x/m);}
+
+    function powerIter(mat,deflated){
+      let v=new Array(d).fill(0).map(()=>Math.random());
+      v=normalize(v);
+      for(let iter=0;iter<100;iter++){
+        let newV=new Array(d).fill(0);
+        for(let row of mat){
+          let dp=dot(row,v);
+          for(let i=0;i<d;i++) newV[i]+=row[i]*dp;
+        }
+        if(deflated){
+          let dp2=dot(newV,deflated);
+          for(let i=0;i<d;i++) newV[i]-=dp2*deflated[i];
+        }
+        v=normalize(newV);
+      }
+      return v;
+    }
+
+    let pc1=powerIter(centered,null);
+    let pc2=powerIter(centered,pc1);
+
+    return centered.map(v=>[dot(v,pc1),dot(v,pc2)]);
+  } else {
+    // Simple t-SNE approximation using repulsion/attraction
+    let n=vecs.length;
+    // Compute pairwise distances in high-dim
+    function dist(a,b){let s=0;for(let i=0;i<a.length;i++)s+=(a[i]-b[i])**2;return Math.sqrt(s);}
+    let highDist=[];
+    for(let i=0;i<n;i++){
+      highDist[i]=[];
+      for(let j=0;j<n;j++) highDist[i][j]=dist(vecs[i],vecs[j]);
+    }
+
+    // Initialize randomly
+    let pos=[];
+    for(let i=0;i<n;i++) pos.push([Math.random()*2-1, Math.random()*2-1]);
+
+    // Simple force-directed layout respecting high-dim distances
+    for(let iter=0;iter<300;iter++){
+      let lr=0.05*(1-iter/300);
+      for(let i=0;i<n;i++){
+        let fx=0,fy=0;
+        for(let j=0;j<n;j++){
+          if(i===j) continue;
+          let dx=pos[i][0]-pos[j][0], dy=pos[i][1]-pos[j][1];
+          let lowD=Math.sqrt(dx*dx+dy*dy)+1e-6;
+          let highD=highDist[i][j]+1e-6;
+          let force=(lowD-highD*0.8)/lowD;
+          fx-=force*dx*0.1;
+          fy-=force*dy*0.1;
+        }
+        pos[i][0]+=lr*fx;
+        pos[i][1]+=lr*fy;
+      }
+    }
+    return pos;
+  }
+}
+
+function renderEmbeddings(words, positions, links){
+  let c=document.getElementById('embeddingCanvas');
+  let ctx=c.getContext('2d');
+  ctx.fillStyle='#0a0a14';
+  ctx.fillRect(0,0,800,550);
+
+  // Normalize positions to canvas
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(let p of positions){
+    minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);
+    minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);
+  }
+  let rx=maxX-minX||1, ry=maxY-minY||1;
+  let range=Math.max(rx,ry);
+  let cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+
+  function mapP(p){
+    return [400+(p[0]-cx)/range*600, 275+(p[1]-cy)/range*400];
+  }
+
+  // Draw links
+  if(links){
+    ctx.lineWidth=1;
+    for(let [i,j] of links){
+      let [x1,y1]=mapP(positions[i]);
+      let [x2,y2]=mapP(positions[j]);
+      ctx.strokeStyle='#334466';
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+      ctx.stroke();
+
+      // Distance label
+      let d=Math.sqrt((positions[i][0]-positions[j][0])**2+(positions[i][1]-positions[j][1])**2);
+      ctx.fillStyle='#445566';
+      ctx.font='9px monospace';
+      ctx.fillText(d.toFixed(2),(x1+x2)/2,(y1+y2)/2-5);
+    }
+  }
+
+  // Draw points and labels
+  for(let i=0;i<words.length;i++){
+    let [x,y]=mapP(positions[i]);
+    let hue=(i/words.length)*300;
+
+    // Glow
+    let grad=ctx.createRadialGradient(x,y,0,x,y,20);
+    grad.addColorStop(0,hsl(hue,70,50)+'44');
+    grad.addColorStop(1,'transparent');
+    ctx.fillStyle=grad;
+    ctx.fillRect(x-20,y-20,40,40);
+
+    // Point
+    ctx.beginPath();
+    ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fillStyle=hsl(hue,70,60);
+    ctx.fill();
+    ctx.strokeStyle='#000';
+    ctx.lineWidth=0.5;
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle='#ccddee';
+    ctx.font='12px "Segoe UI",sans-serif';
+    ctx.fillText(words[i],x+8,y+4);
+  }
+}
+
+// ============================================================
+//  INIT
+// ============================================================
+rebuildNetwork();
+
+// Set up loss landscape drag interaction
+setTimeout(()=>{
+  let c=document.getElementById('loss3d');
+  c.addEventListener('mousedown',e=>{
+    lossDragState.dragging=true;
+    lossDragState.lastX=e.clientX;
+    lossDragState.lastY=e.clientY;
+    e.preventDefault();
+  });
+},100);
+
+</script>
+</body>
+</html>
