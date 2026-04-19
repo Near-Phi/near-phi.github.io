@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coherence Cymatics</title>
+<style>
+  html, body { margin:0; padding:0; background:#08080c; color:#ddd;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    overflow:hidden; height:100%; }
+  .grid {
+    display:grid;
+    grid-template-columns: 300px 1fr 300px;
+    grid-template-rows: 1fr 140px;
+    gap:10px; padding:10px; height:100vh; box-sizing:border-box;
+  }
+  .panel { background:#10101a; border:1px solid #1d1d2a; border-radius:6px;
+           padding:10px; display:flex; flex-direction:column; min-height:0; }
+  .panel h3 { margin:0 0 8px; font-size:10px; font-weight:500;
+              color:#6a6a80; text-transform:uppercase; letter-spacing:1.5px; }
+  #chladniWrap { grid-row:1; grid-column:2; background:#000;
+                 border:1px solid #1d1d2a; border-radius:6px; position:relative;
+                 display:flex; align-items:center; justify-content:center; }
+  #chladni { image-rendering: pixelated; width:min(100%,100%); height:100%;
+             max-width:100%; max-height:100%; }
+  #chladniLabel { position:absolute; top:10px; left:14px; font-size:10px;
+                  color:#4a4a60; letter-spacing:1.5px; text-transform:uppercase; }
+  #coherenceBig { font-size: 84px; font-weight: 200; text-align:center;
+                  color:#7ac2ff; line-height:1; margin:6px 0 2px;
+                  font-variant-numeric: tabular-nums; transition:color 0.2s; }
+  #coherenceLabel { text-align:center; font-size:9px; color:#555;
+                    letter-spacing:2px; margin-bottom:8px; }
+  #phaseWheel { width:100%; max-width:260px; align-self:center; }
+  canvas { display:block; }
+  #recurrence { width:100%; image-rendering:pixelated; background:#000; border-radius:3px; }
+  #spectrum, #history { width:100%; background:#000; border-radius:3px; }
+  .historyPanel { grid-row:2; grid-column:1/4; }
+  #start { position: fixed; inset:0; display:flex; align-items:center;
+           justify-content:center; background:#08080c; z-index:10; cursor:pointer; }
+  #start div { padding:20px 40px; border:1px solid #333; border-radius:4px;
+               font-size:13px; color:#888; letter-spacing:1px; }
+  #start div:hover { color:#ddd; border-color:#555; }
+  .meta { font-size:9px; color:#444; display:flex; justify-content:space-between;
+          margin-top:4px; }
+  .pill { display:inline-block; padding:2px 6px; background:#1a1a28;
+          border-radius:3px; color:#7a7a90; font-size:9px; }
+</style>
+</head>
+<body>
+<div id="start"><div>CLICK TO START MICROPHONE</div></div>
+<div class="grid">
+  <div class="panel">
+    <h3>Coherence</h3>
+    <div id="coherenceBig">0.00</div>
+    <div id="coherenceLabel">1 &minus; SPECTRAL FLATNESS</div>
+    <h3 style="margin-top:6px">Phase Lock (top 8)</h3>
+    <canvas id="phaseWheel" width="260" height="260"></canvas>
+    <div class="meta">
+      <span>r = <span id="rVal">0.00</span></span>
+      <span>flat = <span id="flatVal">0.00</span></span>
+    </div>
+  </div>
+
+  <div id="chladniWrap">
+    <span id="chladniLabel">Chladni membrane &mdash; driven by live audio</span>
+    <canvas id="chladni" width="192" height="192"></canvas>
+  </div>
+
+  <div class="panel">
+    <h3>Recurrence Plot <span class="pill">Takens &tau;=4</span></h3>
+    <canvas id="recurrence" width="128" height="128"></canvas>
+    <h3 style="margin-top:10px">Spectrum</h3>
+    <canvas id="spectrum" width="260" height="90"></canvas>
+    <div class="meta">
+      <span>mode targets &darr;</span>
+      <span>0 &rarr; 4 kHz</span>
+    </div>
+  </div>
+
+  <div class="panel historyPanel">
+    <h3>Coherence history &mdash; last ~10s</h3>
+    <canvas id="history" width="1600" height="100"></canvas>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  COHERENCE CYMATICS
+//  - Real 2D membrane eigenmode simulation (Chladni)
+//  - Driven by live mic audio at 16 (m,n) modes
+//  - Coherence = 1 - Wiener spectral flatness (real metric)
+//  - Kuramoto order parameter r shown in phase wheel
+//  - Takens embedding recurrence plot of the waveform
+// ============================================================
+
+const W = 192, H = 192;
+const FFT_SIZE = 2048;
+const MODE_MAX = 4;              // m,n in 1..4 → 16 modes
+const NUM_OSC = 8;               // top oscillators for Kuramoto r
+const REC_N = 128, TAU = 4;      // recurrence plot size, embedding delay
+
+// Build mode list sorted by (m²+n²) so lowest modes map to lowest freqs
+const modes = [];
+for (let m=1; m<=MODE_MAX; m++)
+  for (let n=1; n<=MODE_MAX; n++)
+    modes.push([m,n]);
+modes.sort((a,b) => (a[0]*a[0]+a[1]*a[1]) - (b[0]*b[0]+b[1]*b[1]));
+
+// Target driving frequencies: log-spaced 180 → 1800 Hz across modes
+const targetFreqs = modes.map((_,i) => {
+  const t = i / (modes.length - 1);
+  return Math.round(180 * Math.pow(1800/180, t));
+});
+
+// Precompute each mode's basis sin(mπx)sin(nπy) over the grid
+const basis = modes.map(([m,n]) => {
+  const arr = new Float32Array(W*H);
+  for (let y=0; y<H; y++) {
+    const v = (y+0.5)/H;
+    const sy = Math.sin(n*Math.PI*v);
+    for (let x=0; x<W; x++) {
+      const u = (x+0.5)/W;
+      arr[y*W+x] = Math.sin(m*Math.PI*u) * sy;
+    }
+  }
+  return arr;
+});
+
+// --- state ---
+let audioCtx, analyser, freqData, timeData, sampleRate, started=false;
+const modeAmp = new Float32Array(modes.length);    // smoothed amplitudes
+const modeAmpTarget = new Float32Array(modes.length);
+
+// --- start audio ---
+document.getElementById('start').addEventListener('click', async () => {
+  if (started) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {echoCancellation:false, noiseSuppression:false, autoGainControl:false}
+    });
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sampleRate = audioCtx.sampleRate;
+    const src = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = FFT_SIZE;
+    analyser.smoothingTimeConstant = 0.4;
+    src.connect(analyser);
+    freqData = new Float32Array(analyser.frequencyBinCount);
+    timeData = new Float32Array(analyser.fftSize);
+    magLin = new Float32Array(analyser.frequencyBinCount);
+    document.getElementById('start').style.display = 'none';
+    started = true;
+    requestAnimationFrame(frame);
+  } catch (e) {
+    document.getElementById('start').innerHTML =
+      '<div>Microphone denied or unavailable: ' + e.message + '</div>';
+  }
+});
+
+// --- canvases ---
+const chladniCvs = document.getElementById('chladni');
+const chladniCtx = chladniCvs.getContext('2d');
+const chladniImg = chladniCtx.createImageData(W, H);
+
+const phaseCvs = document.getElementById('phaseWheel');
+const phaseCtx = phaseCvs.getContext('2d');
+
+const recCvs = document.getElementById('recurrence');
+const recCtx = recCvs.getContext('2d');
+const recImg = recCtx.createImageData(REC_N, REC_N);
+
+const specCvs = document.getElementById('spectrum');
+const specCtx = specCvs.getContext('2d');
+
+const histCvs = document.getElementById('history');
+const histCtx = histCvs.getContext('2d');
+const HIST_LEN = 600;
+const history = new Float32Array(HIST_LEN);
+let histIdx = 0;
+
+// --- Goertzel: returns magnitude & phase at exact frequency ---
+function goertzel(samples, freq, sr) {
+  const N = samples.length;
+  const k = freq * N / sr;
+  const w = 2 * Math.PI * k / N;
+  const cw = Math.cos(w), sw = Math.sin(w);
+  const coeff = 2 * cw;
+  let q0=0, q1=0, q2=0;
+  for (let i=0; i<N; i++) { q0 = coeff*q1 - q2 + samples[i]; q2=q1; q1=q0; }
+  const real = q1 - q2*cw;
+  const imag = q2*sw;
+  return { mag: Math.sqrt(real*real + imag*imag) * 2 / N,
+           phase: Math.atan2(imag, real) };
+}
+
+let magLin;
+let tStart = performance.now();
+
+function frame() {
+  const now = performance.now();
+  const t = (now - tStart) / 1000;
+
+  analyser.getFloatTimeDomainData(timeData);
+  analyser.getFloatFrequencyData(freqData);
+
+  // Convert dB spectrum to linear magnitudes (for flatness)
+  let magSum = 0, logSum = 0, count = 0;
+  const loBin = Math.max(1, Math.floor(80 * FFT_SIZE / sampleRate));
+  const hiBin = Math.min(freqData.length - 1,
+                         Math.floor(3000 * FFT_SIZE / sampleRate));
+  for (let i=loBin; i<=hiBin; i++) {
+    const lin = Math.pow(10, freqData[i] / 20);
+    magLin[i] = lin;
+    magSum += lin;
+    logSum += Math.log(lin + 1e-12);
+    count++;
+  }
+  const arithMean = magSum / count;
+  const geoMean = Math.exp(logSum / count);
+  const flatness = arithMean > 1e-12 ? geoMean / arithMean : 1;
+  let coherence = 1 - flatness;
+  // Gate: if total energy is tiny, don't pretend it's coherent
+  const totalEnergy = magSum / count;
+  if (totalEnergy < 1e-5) coherence = 0;
+
+  // --- per-mode amplitude & phase via Goertzel ---
+  const phases = new Float32Array(modes.length);
+  for (let i=0; i<modes.length; i++) {
+    const { mag, phase } = goertzel(timeData, targetFreqs[i], sampleRate);
+    modeAmpTarget[i] = mag;
+    phases[i] = phase;
+  }
+  // smooth amplitudes for stability
+  for (let i=0; i<modes.length; i++) {
+    modeAmp[i] += (modeAmpTarget[i] - modeAmp[i]) * 0.25;
+  }
+
+  // normalize
+  let ampMax = 0;
+  for (let i=0; i<modeAmp.length; i++)
+    if (modeAmp[i] > ampMax) ampMax = modeAmp[i];
+  if (ampMax < 1e-6) ampMax = 1e-6;
+
+  // --- Kuramoto r over top NUM_OSC oscillators ---
+  const orderIdx = [...modeAmp.keys()]
+    .sort((a,b) => modeAmpTarget[b] - modeAmpTarget[a])
+    .slice(0, NUM_OSC);
+  let sx=0, sy=0, wsum=0;
+  for (const i of orderIdx) {
+    const w = modeAmpTarget[i];
+    sx += Math.cos(phases[i]) * w;
+    sy += Math.sin(phases[i]) * w;
+    wsum += w;
+  }
+  const r = wsum > 1e-9 ? Math.sqrt(sx*sx+sy*sy) / wsum : 0;
+
+  // --- DOM updates ---
+  document.getElementById('coherenceBig').textContent = coherence.toFixed(3);
+  document.getElementById('rVal').textContent = r.toFixed(3);
+  document.getElementById('flatVal').textContent = flatness.toFixed(3);
+  // color: cool at 0 → warm at 1
+  const hue = Math.floor(210 - coherence * 170);
+  const sat = 60 + coherence * 30;
+  const lig = 55 + coherence * 15;
+  document.getElementById('coherenceBig').style.color =
+    `hsl(${hue}, ${sat}%, ${lig}%)`;
+
+  // --- Chladni render ---
+  // u(x,y,t) = Σ_k A_k * basis_k * cos(2π f_k t)
+  // Pattern stability = naturally controlled by amplitude consistency.
+  // Coherent signals → stable A_k → standing wave with sharp nodes.
+  // Noise → jittering A_k → smeared pattern.
+  const uArr = new Float32Array(W*H);
+  let drove = false;
+  for (let k=0; k<modes.length; k++) {
+    const A = modeAmp[k] / ampMax;
+    if (A < 0.03) continue;
+    drove = true;
+    const tc = Math.cos(2 * Math.PI * targetFreqs[k] * t * 0.08) * A;
+    // slow time scaling 0.08 so the eye can follow the animation
+    const b = basis[k];
+    for (let p=0; p<W*H; p++) uArr[p] += b[p] * tc;
+  }
+
+  // render: nodal lines bright, antinodes dark (classic Chladni look)
+  let umax = 0;
+  for (let p=0; p<uArr.length; p++) {
+    const a = Math.abs(uArr[p]);
+    if (a > umax) umax = a;
+  }
+  if (umax < 1e-6) umax = 1;
+  const data = chladniImg.data;
+  // Color scheme: cool blue→gold as coherence rises
+  const rR = 60 + coherence * 195;
+  const gG = 90 + coherence * 130;
+  const bB = 200 - coherence * 140;
+  for (let p=0; p<uArr.length; p++) {
+    const v = Math.abs(uArr[p]) / umax;
+    // sharpness increases with coherence: exponent 3 → 10
+    const expo = 3 + coherence * 8;
+    const s = Math.pow(1 - v, expo);
+    const i4 = p * 4;
+    data[i4  ] = Math.floor(s * rR);
+    data[i4+1] = Math.floor(s * gG);
+    data[i4+2] = Math.floor(s * bB);
+    data[i4+3] = 255;
+  }
+  chladniCtx.putImageData(chladniImg, 0, 0);
+
+  // --- phase wheel ---
+  const pw = phaseCvs.width, ph = phaseCvs.height;
+  phaseCtx.fillStyle = '#080810';
+  phaseCtx.fillRect(0,0,pw,ph);
+  const cx = pw/2, cy = ph/2, R = Math.min(pw,ph)/2 - 18;
+  phaseCtx.strokeStyle = '#1e1e2e';
+  phaseCtx.beginPath(); phaseCtx.arc(cx,cy,R,0,Math.PI*2); phaseCtx.stroke();
+  // reference axes
+  phaseCtx.strokeStyle = '#151522';
+  phaseCtx.beginPath();
+  phaseCtx.moveTo(cx-R,cy); phaseCtx.lineTo(cx+R,cy);
+  phaseCtx.moveTo(cx,cy-R); phaseCtx.lineTo(cx,cy+R);
+  phaseCtx.stroke();
+  // oscillator dots
+  for (const i of orderIdx) {
+    const A = modeAmpTarget[i] / (ampMax + 1e-9);
+    if (A < 0.02) continue;
+    const px = cx + Math.cos(phases[i]) * R;
+    const py = cy + Math.sin(phases[i]) * R;
+    const rad = 3 + 7 * A;
+    phaseCtx.fillStyle = `rgba(160,200,255,${0.25 + 0.75*A})`;
+    phaseCtx.beginPath();
+    phaseCtx.arc(px, py, rad, 0, Math.PI*2);
+    phaseCtx.fill();
+  }
+  // mean vector (Kuramoto r)
+  if (wsum > 1e-9) {
+    phaseCtx.strokeStyle = `hsl(${hue},${sat}%,${lig}%)`;
+    phaseCtx.lineWidth = 3;
+    phaseCtx.beginPath();
+    phaseCtx.moveTo(cx,cy);
+    phaseCtx.lineTo(cx + (sx/wsum)*R, cy + (sy/wsum)*R);
+    phaseCtx.stroke();
+    phaseCtx.lineWidth = 1;
+  }
+  // r label
+  phaseCtx.fillStyle = '#555';
+  phaseCtx.font = '10px ui-monospace, monospace';
+  phaseCtx.fillText('r = ' + r.toFixed(2), 8, ph - 8);
+
+  // --- recurrence plot: Takens embedding of waveform ---
+  const sampStride = Math.max(1, Math.floor(timeData.length / (REC_N + 2*TAU + 2)));
+  const emb = new Float32Array(REC_N * 3);
+  for (let i=0; i<REC_N; i++) {
+    emb[i*3+0] = timeData[ i            * sampStride];
+    emb[i*3+1] = timeData[(i +   TAU)   * sampStride];
+    emb[i*3+2] = timeData[(i + 2*TAU)   * sampStride];
+  }
+  // adaptive epsilon from embedded std
+  let m=0;
+  for (let i=0; i<REC_N*3; i++) m += emb[i];
+  m /= (REC_N*3);
+  let variance = 0;
+  for (let i=0; i<REC_N*3; i++) { const d = emb[i]-m; variance += d*d; }
+  variance /= (REC_N*3);
+  const eps = 0.12 * Math.sqrt(variance) + 1e-7;
+  const rd = recImg.data;
+  for (let i=0; i<REC_N; i++) {
+    const i0 = emb[i*3], i1 = emb[i*3+1], i2 = emb[i*3+2];
+    for (let j=0; j<REC_N; j++) {
+      const dx = i0 - emb[j*3];
+      const dy = i1 - emb[j*3+1];
+      const dz = i2 - emb[j*3+2];
+      const d  = Math.sqrt(dx*dx + dy*dy + dz*dz);
+      const on = d < eps;
+      const p4 = (j*REC_N + i) * 4;
+      if (on) {
+        rd[p4]   = 120 + coherence*100;
+        rd[p4+1] = 160 + coherence*70;
+        rd[p4+2] = 230;
+        rd[p4+3] = 255;
+      } else {
+        rd[p4]=8; rd[p4+1]=8; rd[p4+2]=14; rd[p4+3]=255;
+      }
+    }
+  }
+  recCtx.putImageData(recImg, 0, 0);
+
+  // --- spectrum ---
+  const sw = specCvs.width, sh = specCvs.height;
+  specCtx.fillStyle = '#060610'; specCtx.fillRect(0,0,sw,sh);
+  const binCount = analyser.frequencyBinCount;
+  // show up to 4kHz
+  const maxBin = Math.min(binCount-1, Math.floor(4000 * FFT_SIZE / sampleRate));
+  for (let x=0; x<sw; x++) {
+    const bin = Math.floor(x * maxBin / sw) + 1;
+    const db = freqData[bin];
+    const v = Math.max(0, (db + 100) / 100);
+    const bh = v * sh;
+    specCtx.fillStyle = `rgba(90,140,220,${0.4 + v*0.5})`;
+    specCtx.fillRect(x, sh - bh, 1, bh);
+  }
+  // mark target frequencies
+  specCtx.fillStyle = '#c89050';
+  for (const tf of targetFreqs) {
+    const bin = Math.round(tf * FFT_SIZE / sampleRate);
+    const x = Math.floor(bin * sw / maxBin);
+    specCtx.fillRect(x, sh - 5, 1, 5);
+  }
+
+  // --- coherence history ---
+  history[histIdx % HIST_LEN] = coherence;
+  histIdx++;
+  const hw = histCvs.width, hh = histCvs.height;
+  histCtx.fillStyle = '#060610'; histCtx.fillRect(0,0,hw,hh);
+  // gridlines
+  histCtx.strokeStyle = '#1a1a28'; histCtx.lineWidth = 1;
+  for (let gy=0; gy<=4; gy++) {
+    const y = (gy/4) * hh;
+    histCtx.beginPath(); histCtx.moveTo(0,y); histCtx.lineTo(hw,y); histCtx.stroke();
+  }
+  // trace
+  histCtx.strokeStyle = '#7ac2ff'; histCtx.lineWidth = 2;
+  histCtx.beginPath();
+  for (let i=0; i<HIST_LEN; i++) {
+    const id = (histIdx + i) % HIST_LEN;
+    const v = history[id];
+    const x = (i / HIST_LEN) * hw;
+    const y = hh - v * hh;
+    if (i===0) histCtx.moveTo(x,y); else histCtx.lineTo(x,y);
+  }
+  histCtx.stroke();
+  histCtx.lineWidth = 1;
+
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
