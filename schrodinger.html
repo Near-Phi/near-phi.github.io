@@ -1,0 +1,1251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2D Schrodinger Equation Solver</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  color: #e0e0e0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+}
+header {
+  background: #12121a;
+  border-bottom: 1px solid #2a2a3a;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 50px;
+}
+header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #4a9eff;
+}
+header h1 span { color: #888; font-weight: 400; font-size: 13px; margin-left: 10px; }
+.header-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.header-controls button {
+  background: #1e1e2e;
+  border: 1px solid #2a2a3a;
+  color: #e0e0e0;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+.header-controls button:hover { border-color: #4a9eff; color: #4a9eff; }
+.header-controls button.active { background: #4a9eff; color: #fff; border-color: #4a9eff; }
+.main-container {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+.sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: #12121a;
+  border-right: 1px solid #2a2a3a;
+  overflow-y: auto;
+  padding: 12px;
+}
+.sidebar::-webkit-scrollbar { width: 6px; }
+.sidebar::-webkit-scrollbar-track { background: #12121a; }
+.sidebar::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 3px; }
+.panel {
+  background: #1a1a28;
+  border: 1px solid #2a2a3a;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.panel-header {
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #4a9eff;
+  border-bottom: 1px solid #2a2a3a;
+  cursor: pointer;
+}
+.panel-body { padding: 10px 12px; }
+.param-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.param-row label {
+  font-size: 12px;
+  color: #aaa;
+}
+.param-row .value {
+  font-size: 11px;
+  color: #4a9eff;
+  min-width: 40px;
+  text-align: right;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 4px;
+  background: #2a2a3a;
+  border-radius: 2px;
+  outline: none;
+  margin: 4px 0;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #4a9eff;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.preset-btn, .potential-btn {
+  display: block;
+  width: 100%;
+  background: #1e1e2e;
+  border: 1px solid #2a2a3a;
+  color: #ccc;
+  padding: 7px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  margin-bottom: 5px;
+  transition: all 0.15s;
+}
+.preset-btn:hover, .potential-btn:hover { border-color: #4a9eff; color: #4a9eff; }
+.preset-btn.active, .potential-btn.active { background: #4a9eff22; border-color: #4a9eff; color: #4a9eff; }
+.canvas-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+canvas {
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+.status-bar {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #12121acc;
+  border: 1px solid #2a2a3a;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 11px;
+  color: #888;
+  display: flex;
+  gap: 16px;
+}
+.status-bar span { color: #4a9eff; }
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #aaa;
+  cursor: pointer;
+}
+.checkbox-row input[type="checkbox"] {
+  accent-color: #4a9eff;
+}
+.viz-btn {
+  display: inline-block;
+  background: #1e1e2e;
+  border: 1px solid #2a2a3a;
+  color: #ccc;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  margin: 2px;
+  transition: all 0.15s;
+}
+.viz-btn:hover { border-color: #4a9eff; }
+.viz-btn.active { background: #4a9eff; color: #fff; border-color: #4a9eff; }
+.instructions {
+  font-size: 11px;
+  color: #666;
+  line-height: 1.5;
+  padding: 4px 0;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Schrodinger Equation Solver <span>2D Time-Dependent | Split-Operator ADI</span></h1>
+  <div class="header-controls">
+    <button id="btnPlay" class="active" onclick="togglePlay()">Pause</button>
+    <button id="btnStep" onclick="stepOnce()">Step</button>
+    <button id="btnReset" onclick="resetSim()">Reset</button>
+  </div>
+</header>
+
+<div class="main-container">
+  <div class="sidebar">
+
+    <div class="panel">
+      <div class="panel-header">Presets</div>
+      <div class="panel-body">
+        <button class="preset-btn" onclick="loadPreset('free')">Free Particle</button>
+        <button class="preset-btn" onclick="loadPreset('double_slit')">Double Slit</button>
+        <button class="preset-btn" onclick="loadPreset('tunnel')">Tunneling</button>
+        <button class="preset-btn" onclick="loadPreset('corral')">Quantum Corral</button>
+        <button class="preset-btn" onclick="loadPreset('harmonic')">Harmonic Oscillator</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Visualization</div>
+      <div class="panel-body">
+        <div style="display:flex;flex-wrap:wrap;gap:2px;margin-bottom:8px;">
+          <button class="viz-btn active" id="vizProb" onclick="setViz('prob')">|psi|^2</button>
+          <button class="viz-btn" id="vizPhase" onclick="setViz('phase')">Phase</button>
+          <button class="viz-btn" id="vizReal" onclick="setViz('real')">Re(psi)</button>
+        </div>
+        <label class="checkbox-row"><input type="checkbox" id="chkCurrents" onchange="toggleCurrents()"> Show probability current</label>
+        <div class="param-row">
+          <label>Brightness</label>
+          <span class="value" id="valBright">5.0</span>
+        </div>
+        <input type="range" min="0.5" max="30" step="0.5" value="5" id="slBright" oninput="updateParam('bright')">
+        <div class="param-row">
+          <label>Speed (steps/frame)</label>
+          <span class="value" id="valSpeed">4</span>
+        </div>
+        <input type="range" min="1" max="20" step="1" value="4" id="slSpeed" oninput="updateParam('speed')">
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Wavepacket Parameters</div>
+      <div class="panel-body">
+        <div class="param-row">
+          <label>Width (sigma)</label>
+          <span class="value" id="valSigma">10</span>
+        </div>
+        <input type="range" min="3" max="30" step="1" value="10" id="slSigma" oninput="updateParam('sigma')">
+        <div class="param-row">
+          <label>Momentum</label>
+          <span class="value" id="valMomentum">2.0</span>
+        </div>
+        <input type="range" min="0" max="8" step="0.1" value="2.0" id="slMomentum" oninput="updateParam('momentum')">
+        <div class="param-row">
+          <label>Mass</label>
+          <span class="value" id="valMass">1.0</span>
+        </div>
+        <input type="range" min="0.1" max="5" step="0.1" value="1.0" id="slMass" oninput="updateParam('mass')">
+        <div class="param-row">
+          <label>dt</label>
+          <span class="value" id="valDt">0.10</span>
+        </div>
+        <input type="range" min="0.02" max="0.5" step="0.02" value="0.10" id="slDt" oninput="updateParam('dt')">
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Potential Tools</div>
+      <div class="panel-body">
+        <button class="potential-btn active" id="toolWave" onclick="setTool('wave')">Place Wavepacket</button>
+        <button class="potential-btn" id="toolDraw" onclick="setTool('draw')">Draw Barrier</button>
+        <button class="potential-btn" id="toolErase" onclick="setTool('erase')">Erase Barrier</button>
+        <div class="param-row" style="margin-top:8px;">
+          <label>Barrier Height</label>
+          <span class="value" id="valBarrier">50</span>
+        </div>
+        <input type="range" min="5" max="200" step="5" value="50" id="slBarrier" oninput="updateParam('barrier')">
+        <div class="param-row">
+          <label>Brush Size</label>
+          <span class="value" id="valBrush">3</span>
+        </div>
+        <input type="range" min="1" max="15" step="1" value="3" id="slBrush" oninput="updateParam('brush')">
+        <div class="instructions">
+          Click canvas to place wavepacket.<br>
+          Drag to set momentum direction.<br>
+          Switch to Draw to paint barriers.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="canvas-container" id="canvasContainer">
+    <canvas id="simCanvas"></canvas>
+    <div class="status-bar" id="statusBar">
+      <div>Step: <span id="statStep">0</span></div>
+      <div>Norm: <span id="statNorm">1.000</span></div>
+      <div>FPS: <span id="statFps">0</span></div>
+      <div><span id="statSize">256x256</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Configuration =====
+const N = 256;
+const dx = 1.0;
+let dt = 0.10;
+let mass = 1.0;
+let hbar = 1.0;
+let sigma = 10;
+let momentum = 2.0;
+let barrierHeight = 50;
+let brushSize = 3;
+let stepsPerFrame = 4;
+let brightness = 5.0;
+let vizMode = 'prob'; // 'prob', 'phase', 'real'
+let showCurrents = false;
+let currentTool = 'wave';
+let running = true;
+let stepCount = 0;
+
+// ===== Wavefunction arrays (real, imag) =====
+const psiR = new Float64Array(N * N);
+const psiI = new Float64Array(N * N);
+const V = new Float64Array(N * N); // potential
+
+// Temporary arrays for ADI solver
+const aR = new Float64Array(N);
+const aI = new Float64Array(N);
+const bR = new Float64Array(N);
+const bI = new Float64Array(N);
+const cR = new Float64Array(N);
+const cI = new Float64Array(N);
+const dR = new Float64Array(N);
+const dI = new Float64Array(N);
+const xR = new Float64Array(N);
+const xI = new Float64Array(N);
+
+// Temp storage for half-step
+const tmpR = new Float64Array(N * N);
+const tmpI = new Float64Array(N * N);
+
+// Canvas
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+let imgData;
+let canvasScale = 1;
+
+function initCanvas() {
+  const container = document.getElementById('canvasContainer');
+  const maxW = container.clientWidth - 40;
+  const maxH = container.clientHeight - 60;
+  canvasScale = Math.max(1, Math.floor(Math.min(maxW, maxH) / N));
+  if (canvasScale < 1) canvasScale = 1;
+  canvas.width = N * canvasScale;
+  canvas.height = N * canvasScale;
+  // We'll draw at N x N then scale, or draw directly
+  // For perf, draw to offscreen then scale
+  if (!window.offCanvas) {
+    window.offCanvas = document.createElement('canvas');
+    window.offCanvas.width = N;
+    window.offCanvas.height = N;
+    window.offCtx = window.offCanvas.getContext('2d');
+  }
+  imgData = window.offCtx.createImageData(N, N);
+}
+
+// ===== Initialize wavefunction =====
+function initGaussian(cx, cy, kx, ky) {
+  const sig2 = sigma * sigma;
+  let norm = 0;
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const idx = j * N + i;
+      const rx = i - cx;
+      const ry = j - cy;
+      const r2 = rx * rx + ry * ry;
+      const env = Math.exp(-r2 / (2 * sig2));
+      const phase = kx * i * dx + ky * j * dx;
+      psiR[idx] = env * Math.cos(phase);
+      psiI[idx] = env * Math.sin(phase);
+      norm += env * env;
+    }
+  }
+  norm = Math.sqrt(norm);
+  if (norm > 0) {
+    for (let idx = 0; idx < N * N; idx++) {
+      psiR[idx] /= norm;
+      psiI[idx] /= norm;
+    }
+  }
+}
+
+function clearWavefunction() {
+  psiR.fill(0);
+  psiI.fill(0);
+}
+
+function clearPotential() {
+  V.fill(0);
+}
+
+// ===== Potential presets =====
+function setWallBoundary(height) {
+  // Absorbing boundary via high potential walls (5 cells thick)
+  const w = 5;
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      if (i < w || i >= N - w || j < w || j >= N - w) {
+        V[j * N + i] = height;
+      }
+    }
+  }
+}
+
+function addDoubleSlit(cx, slitW, slitSep, wallW, wallH) {
+  // Vertical wall at x=cx, two slits centered vertically
+  const cy = N / 2;
+  for (let j = 0; j < N; j++) {
+    for (let i = cx; i < cx + wallW; i++) {
+      if (i >= 0 && i < N) {
+        const dy = Math.abs(j - cy);
+        const halfSep = slitSep / 2;
+        // slit centers at cy - halfSep and cy + halfSep
+        const inSlit1 = Math.abs(j - (cy - halfSep)) < slitW / 2;
+        const inSlit2 = Math.abs(j - (cy + halfSep)) < slitW / 2;
+        if (!inSlit1 && !inSlit2) {
+          V[j * N + i] = wallH;
+        }
+      }
+    }
+  }
+}
+
+function addSingleSlit(cx, slitW, wallW, wallH) {
+  const cy = N / 2;
+  for (let j = 0; j < N; j++) {
+    for (let i = cx; i < cx + wallW; i++) {
+      if (i >= 0 && i < N) {
+        const inSlit = Math.abs(j - cy) < slitW / 2;
+        if (!inSlit) {
+          V[j * N + i] = wallH;
+        }
+      }
+    }
+  }
+}
+
+function addStepPotential(cx, height) {
+  for (let j = 0; j < N; j++) {
+    for (let i = cx; i < N; i++) {
+      V[j * N + i] += height;
+    }
+  }
+}
+
+function addBarrier(cx, width, height) {
+  for (let j = 0; j < N; j++) {
+    for (let i = cx; i < cx + width && i < N; i++) {
+      if (i >= 0) V[j * N + i] = height;
+    }
+  }
+}
+
+function addCircularWall(cx, cy, r, thickness, height) {
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const dist = Math.sqrt((i - cx) ** 2 + (j - cy) ** 2);
+      if (Math.abs(dist - r) < thickness / 2) {
+        V[j * N + i] = height;
+      }
+    }
+  }
+}
+
+function addHarmonicPotential(cx, cy, k) {
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const rx = (i - cx) * dx;
+      const ry = (j - cy) * dx;
+      V[j * N + i] = 0.5 * k * (rx * rx + ry * ry);
+    }
+  }
+}
+
+// ===== ADI Crank-Nicolson solver =====
+// Solves: i*hbar * (psi^{n+1} - psi^n)/dt = H*psi
+// Using Cayley form: (1 + i*H*dt/2)^{-1} (1 - i*H*dt/2) psi
+// ADI: split into x-sweep (half step) then y-sweep (half step)
+//
+// For x-sweep at row j:
+//   -alpha * psi(i-1) + (1 + 2*alpha + i*V*dt/4) * psi(i) - alpha * psi(i+1) = RHS
+// where alpha = i*hbar*dt / (4*m*dx^2)
+// RHS uses explicit y-direction terms
+//
+// Complex tridiagonal solve needed.
+
+function evolveADI() {
+  const r = hbar * dt / (4 * mass * dx * dx); // real coefficient
+  // alpha = i * r (the off-diagonal multiplier is purely imaginary in the implicit direction)
+  //
+  // Actually let me be more careful about the derivation.
+  // H = -hbar^2/(2m) * laplacian + V
+  // Cayley: psi^{n+1} = (1 + i*H*dt/(2*hbar))^{-1} * (1 - i*H*dt/(2*hbar)) * psi^n
+  //
+  // Let's define tau = dt/(2*hbar)
+  // Kinetic part: -hbar^2/(2m) * d^2/dx^2, discretized: -hbar^2/(2m*dx^2) * (psi_{i-1} - 2*psi_i + psi_{i+1})
+  // Let beta = hbar*dt / (4*m*dx^2)   [note: hbar*tau * hbar/(2m*dx^2) = hbar^2*dt/(4m*hbar*dx^2) = hbar*dt/(4m*dx^2)]
+  // Wait let me just be precise.
+  //
+  // i*tau*H_kin acting on psi_i = i*tau*(-hbar^2/(2m*dx^2))*(psi_{i-1}-2psi_i+psi_{i+1})
+  //                              = -i*beta*(psi_{i-1}-2psi_i+psi_{i+1})
+  // where beta = hbar*dt/(4*m*dx^2)
+  //
+  // i*tau*V_i*psi_i = i*V_i*dt/(2*hbar) * psi_i  ... let gamma_i = V_i*dt/(2*hbar)
+  //
+  // ADI step 1 (x-implicit, y-explicit, half of V):
+  //   (1 + i*beta*Dx_implicit) psi* = (1 - i*beta*Dy_explicit - i*gamma/2) psi^n
+  //   where Dx_implicit means: for psi*(i,j), the operator -( psi*(i-1,j) - 2*psi*(i,j) + psi*(i+1,j) )
+  //   applied implicitly as tridiagonal
+  //
+  // ADI step 2 (y-implicit, psi* known):
+  //   (1 + i*beta*Dy_implicit + i*gamma/2) psi^{n+1} = psi*
+  //
+  // The implicit operator for x at row j:
+  //   i*beta * psi*(i-1,j) + (1 - 2*i*beta) * psi*(i,j) + i*beta * psi*(i+1,j)  ... wait
+  //   Dx = -(psi_{i-1} - 2psi_i + psi_{i+1}) = -psi_{i-1} + 2psi_i - psi_{i+1}
+  //   So (1 + i*beta*Dx) psi_i = i*beta*(-psi_{i-1}) + (1+2i*beta)*psi_i + i*beta*(-psi_{i+1})
+  //                             = -i*beta*psi_{i-1} + (1+2i*beta)*psi_i - i*beta*psi_{i+1}
+  //   Tridiagonal: a = -i*beta, b = 1+2i*beta, c = -i*beta
+  //
+  // RHS of step 1 (y-explicit):
+  //   (1 - i*beta*Dy - i*gamma_ij/2)*psi^n
+  //   Dy psi_ij = -(psi_{i,j-1} - 2*psi_{i,j} + psi_{i,j+1})
+  //   (1 - i*beta*Dy) psi = psi + i*beta*(psi_{j-1} - 2*psi + psi_{j+1})
+  //   then subtract i*gamma/2 * psi
+
+  const beta = hbar * dt / (4.0 * mass * dx * dx);
+
+  // ===== STEP 1: x-implicit, y-explicit =====
+  // For each row j, solve tridiagonal in x
+  for (let j = 1; j < N - 1; j++) {
+    // Build RHS: (1 - i*beta*Dy - i*gamma/2) * psi^n
+    for (let i = 1; i < N - 1; i++) {
+      const idx = j * N + i;
+      const idxJm = (j - 1) * N + i;
+      const idxJp = (j + 1) * N + i;
+
+      const gamma_half = V[idx] * dt / (4.0 * hbar); // half of gamma for this half-step
+
+      // Dy psi = -(psi_{j-1} - 2*psi + psi_{j+1})
+      // (1 - i*beta*Dy) psi = psi + i*beta*(psi_{j-1} - 2*psi + psi_{j+1})
+      // For complex psi = psiR + i*psiI:
+      // i*beta*(stuff) has real part = -beta*stuff_I, imag part = beta*stuff_R
+
+      const dyR = psiR[idxJm] - 2 * psiR[idx] + psiR[idxJp];
+      const dyI = psiI[idxJm] - 2 * psiI[idx] + psiI[idxJp];
+
+      // (1 + i*beta*(dy)) = (psiR - beta*dyI) + i*(psiI + beta*dyR)
+      let rhR = psiR[idx] - beta * dyI;
+      let rhI = psiI[idx] + beta * dyR;
+
+      // subtract i*gamma_half * psi:
+      // -i*gamma*(psiR+i*psiI) = gamma*psiI - i*gamma*psiR
+      rhR += gamma_half * psiI[idx];
+      rhI -= gamma_half * psiR[idx];
+
+      dR[i] = rhR;
+      dI[i] = rhI;
+    }
+    dR[0] = 0; dI[0] = 0;
+    dR[N - 1] = 0; dI[N - 1] = 0;
+
+    // Tridiagonal coefficients (complex):
+    // a_i = -i*beta => (0, -beta)
+    // b_i = 1 + 2i*beta => (1, 2*beta)
+    // c_i = -i*beta => (0, -beta)
+    // Boundary: b_0 = b_{N-1} = 1, a=c=0 (Dirichlet)
+
+    solveTridiag(N, 0, -beta, 1, 2 * beta, 0, -beta, dR, dI, xR, xI);
+
+    for (let i = 0; i < N; i++) {
+      const idx = j * N + i;
+      tmpR[idx] = xR[i];
+      tmpI[idx] = xI[i];
+    }
+  }
+  // Boundary rows
+  for (let i = 0; i < N; i++) {
+    tmpR[i] = 0; tmpI[i] = 0;
+    tmpR[(N - 1) * N + i] = 0; tmpI[(N - 1) * N + i] = 0;
+  }
+
+  // ===== STEP 2: y-implicit, using tmp =====
+  for (let i = 1; i < N - 1; i++) {
+    // RHS is just tmp (psi*) — no explicit direction needed here in standard ADI
+    // Implicit: (1 + i*beta*Dy + i*gamma/2) psi^{n+1} = tmp
+    for (let j = 0; j < N; j++) {
+      const idx = j * N + i;
+      dR[j] = tmpR[idx];
+      dI[j] = tmpI[idx];
+    }
+
+    // Now the diagonal includes the potential: (1 + 2i*beta + i*gamma/2)
+    // But gamma varies per point, so we need per-point diagonal
+    solveTridiagVar(N, i, beta, dR, dI, xR, xI);
+
+    for (let j = 0; j < N; j++) {
+      const idx = j * N + i;
+      psiR[idx] = xR[j];
+      psiI[idx] = xI[j];
+    }
+  }
+  // Boundary columns
+  for (let j = 0; j < N; j++) {
+    psiR[j * N] = 0; psiI[j * N] = 0;
+    psiR[j * N + N - 1] = 0; psiI[j * N + N - 1] = 0;
+  }
+
+  stepCount++;
+}
+
+// Solve complex tridiagonal with constant coefficients
+// a = (aRe, aIm), b = (bRe, bIm), c = (cRe, cIm)
+// d is RHS, x is solution
+function solveTridiag(n, aRe, aIm, bRe, bIm, cRe, cIm, dRe, dIm, xRe, xIm) {
+  // Thomas algorithm for complex tridiagonal
+  // Using pre-allocated temp arrays (reuse a,b,c arrays since they're constant)
+  const cpR = new Float64Array(n);
+  const cpI = new Float64Array(n);
+  const dpR = new Float64Array(n);
+  const dpI = new Float64Array(n);
+
+  // Forward sweep
+  // cp[0] = c / b
+  let div = complexDiv(cRe, cIm, bRe, bIm);
+  cpR[0] = div[0]; cpI[0] = div[1];
+  div = complexDiv(dRe[0], dIm[0], bRe, bIm);
+  dpR[0] = div[0]; dpI[0] = div[1];
+
+  for (let i = 1; i < n; i++) {
+    // denom = b - a * cp[i-1]
+    const mR = aRe * cpR[i - 1] - aIm * cpI[i - 1];
+    const mI = aRe * cpI[i - 1] + aIm * cpR[i - 1];
+    const denomR = bRe - mR;
+    const denomI = bIm - mI;
+
+    if (i < n - 1) {
+      div = complexDiv(cRe, cIm, denomR, denomI);
+      cpR[i] = div[0]; cpI[i] = div[1];
+    }
+
+    // dp[i] = (d[i] - a * dp[i-1]) / denom
+    const adR = aRe * dpR[i - 1] - aIm * dpI[i - 1];
+    const adI = aRe * dpI[i - 1] + aIm * dpR[i - 1];
+    div = complexDiv(dRe[i] - adR, dIm[i] - adI, denomR, denomI);
+    dpR[i] = div[0]; dpI[i] = div[1];
+  }
+
+  // Back substitution
+  xRe[n - 1] = dpR[n - 1];
+  xIm[n - 1] = dpI[n - 1];
+  for (let i = n - 2; i >= 0; i--) {
+    xRe[i] = dpR[i] - (cpR[i] * xRe[i + 1] - cpI[i] * xIm[i + 1]);
+    xIm[i] = dpI[i] - (cpR[i] * xIm[i + 1] + cpI[i] * xRe[i + 1]);
+  }
+}
+
+// Solve complex tridiagonal with variable diagonal (for y-sweep with potential)
+function solveTridiagVar(n, col, beta, dRe, dIm, xRe, xIm) {
+  // a = (0, -beta), c = (0, -beta), b varies per row
+  const aRe = 0, aIm = -beta;
+  const cRe = 0, cIm = -beta;
+
+  const cpR = new Float64Array(n);
+  const cpI = new Float64Array(n);
+  const dpR = new Float64Array(n);
+  const dpI = new Float64Array(n);
+
+  // b[j] = (1, 2*beta + gamma_half) where gamma_half = V[j*N+col]*dt/(4*hbar)
+  function getB(j) {
+    const gamma_half = V[j * N + col] * dt / (4.0 * hbar);
+    return [1, 2 * beta + gamma_half];
+  }
+
+  // Forward sweep
+  let bv = getB(0);
+  let div = complexDiv(cRe, cIm, bv[0], bv[1]);
+  cpR[0] = div[0]; cpI[0] = div[1];
+  div = complexDiv(dRe[0], dIm[0], bv[0], bv[1]);
+  dpR[0] = div[0]; dpI[0] = div[1];
+
+  for (let j = 1; j < n; j++) {
+    bv = getB(j);
+    const mR = aRe * cpR[j - 1] - aIm * cpI[j - 1];
+    const mI = aRe * cpI[j - 1] + aIm * cpR[j - 1];
+    const denomR = bv[0] - mR;
+    const denomI = bv[1] - mI;
+
+    if (j < n - 1) {
+      div = complexDiv(cRe, cIm, denomR, denomI);
+      cpR[j] = div[0]; cpI[j] = div[1];
+    }
+
+    const adR = aRe * dpR[j - 1] - aIm * dpI[j - 1];
+    const adI = aRe * dpI[j - 1] + aIm * dpR[j - 1];
+    div = complexDiv(dRe[j] - adR, dIm[j] - adI, denomR, denomI);
+    dpR[j] = div[0]; dpI[j] = div[1];
+  }
+
+  xRe[n - 1] = dpR[n - 1];
+  xIm[n - 1] = dpI[n - 1];
+  for (let j = n - 2; j >= 0; j--) {
+    xRe[j] = dpR[j] - (cpR[j] * xRe[j + 1] - cpI[j] * xIm[j + 1]);
+    xIm[j] = dpI[j] - (cpR[j] * xIm[j + 1] + cpI[j] * xRe[j + 1]);
+  }
+}
+
+function complexDiv(aR, aI, bR, bI) {
+  const d = bR * bR + bI * bI;
+  if (d === 0) return [0, 0];
+  return [(aR * bR + aI * bI) / d, (aI * bR - aR * bI) / d];
+}
+
+// ===== Normalization =====
+function computeNorm() {
+  let s = 0;
+  for (let i = 0; i < N * N; i++) {
+    s += psiR[i] * psiR[i] + psiI[i] * psiI[i];
+  }
+  return Math.sqrt(s);
+}
+
+function normalize() {
+  const norm = computeNorm();
+  if (norm > 1e-15) {
+    const inv = 1.0 / norm;
+    for (let i = 0; i < N * N; i++) {
+      psiR[i] *= inv;
+      psiI[i] *= inv;
+    }
+  }
+  return norm;
+}
+
+// ===== Rendering =====
+function hslToRgb(h, s, l) {
+  // h in [0,1], s in [0,1], l in [0,1]
+  if (s === 0) {
+    const v = Math.round(l * 255);
+    return [v, v, v];
+  }
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  function hue2rgb(p, q, t) {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q - p) * 6 * t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+    return p;
+  }
+  return [
+    Math.round(hue2rgb(p, q, h + 1/3) * 255),
+    Math.round(hue2rgb(p, q, h) * 255),
+    Math.round(hue2rgb(p, q, h - 1/3) * 255)
+  ];
+}
+
+function render() {
+  const data = imgData.data;
+
+  if (vizMode === 'prob') {
+    for (let idx = 0; idx < N * N; idx++) {
+      const prob = (psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx]) * brightness * 200;
+      const p4 = idx * 4;
+
+      if (V[idx] > 1) {
+        // Potential barrier - dark red
+        const vv = Math.min(255, V[idx] * 0.8);
+        data[p4] = vv * 0.3;
+        data[p4 + 1] = vv * 0.1;
+        data[p4 + 2] = vv * 0.1;
+        data[p4 + 3] = 255;
+      } else {
+        const v = Math.min(255, prob);
+        // Blue-white color scheme
+        const r = Math.min(255, v * 0.4 + v * v / 255 * 0.6);
+        const g = Math.min(255, v * 0.6 + v * v / 255 * 0.4);
+        const b = Math.min(255, v * 0.9 + v * v / 255 * 0.1);
+        data[p4] = r;
+        data[p4 + 1] = g;
+        data[p4 + 2] = b;
+        data[p4 + 3] = 255;
+      }
+    }
+  } else if (vizMode === 'phase') {
+    for (let idx = 0; idx < N * N; idx++) {
+      const p4 = idx * 4;
+      if (V[idx] > 1) {
+        const vv = Math.min(255, V[idx] * 0.8);
+        data[p4] = vv * 0.3; data[p4+1] = vv * 0.1; data[p4+2] = vv * 0.1; data[p4+3] = 255;
+      } else {
+        const prob = psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx];
+        const amp = Math.min(1, prob * brightness * 200);
+        let phase = Math.atan2(psiI[idx], psiR[idx]);
+        if (phase < 0) phase += 2 * Math.PI;
+        const hue = phase / (2 * Math.PI);
+        const rgb = hslToRgb(hue, 1, amp * 0.5);
+        data[p4] = rgb[0]; data[p4+1] = rgb[1]; data[p4+2] = rgb[2]; data[p4+3] = 255;
+      }
+    }
+  } else { // real
+    for (let idx = 0; idx < N * N; idx++) {
+      const p4 = idx * 4;
+      if (V[idx] > 1) {
+        const vv = Math.min(255, V[idx] * 0.8);
+        data[p4] = vv * 0.3; data[p4+1] = vv * 0.1; data[p4+2] = vv * 0.1; data[p4+3] = 255;
+      } else {
+        const val = psiR[idx] * brightness * 15;
+        if (val > 0) {
+          const v = Math.min(255, val * 255);
+          data[p4] = v * 0.3; data[p4+1] = v * 0.5; data[p4+2] = v; data[p4+3] = 255;
+        } else {
+          const v = Math.min(255, -val * 255);
+          data[p4] = v; data[p4+1] = v * 0.3; data[p4+2] = v * 0.2; data[p4+3] = 255;
+        }
+      }
+    }
+  }
+
+  window.offCtx.putImageData(imgData, 0, 0);
+
+  // Draw scaled
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(window.offCanvas, 0, 0, canvas.width, canvas.height);
+
+  // Draw probability current vectors if enabled
+  if (showCurrents) {
+    drawCurrents();
+  }
+}
+
+function drawCurrents() {
+  ctx.strokeStyle = 'rgba(255, 255, 100, 0.5)';
+  ctx.lineWidth = 1;
+  const step = 12;
+  const scale = 800;
+
+  for (let j = step; j < N - step; j += step) {
+    for (let i = step; i < N - step; i += step) {
+      const idx = j * N + i;
+      // j = (hbar/2mi) * (psi* grad psi - psi grad psi*) = (hbar/m) * Im(psi* grad psi)
+      // jx = (hbar/m) * Im(psi* * dpsi/dx)
+      const dpsiRdx = (psiR[idx + 1] - psiR[idx - 1]) / (2 * dx);
+      const dpsiIdx = (psiI[idx + 1] - psiI[idx - 1]) / (2 * dx);
+      const dpsiRdy = (psiR[idx + N] - psiR[idx - N]) / (2 * dx);
+      const dpsiIdy = (psiI[idx + N] - psiI[idx - N]) / (2 * dx);
+
+      // psi* = psiR - i*psiI
+      // psi* * dpsi/dx = (psiR - i*psiI)(dpsiR/dx + i*dpsiI/dx)
+      // Im part = psiR*dpsiI/dx - psiI*dpsiR/dx
+      const jx = (hbar / mass) * (psiR[idx] * dpsiIdx - psiI[idx] * dpsiRdx) * scale;
+      const jy = (hbar / mass) * (psiR[idx] * dpsiIdy - psiI[idx] * dpsiRdy) * scale;
+
+      const mag = Math.sqrt(jx * jx + jy * jy);
+      if (mag > 0.01) {
+        const cx = i * canvasScale + canvasScale / 2;
+        const cy = j * canvasScale + canvasScale / 2;
+        const maxLen = step * canvasScale * 0.8;
+        const len = Math.min(mag, maxLen);
+        const nx = jx / mag * len;
+        const ny = jy / mag * len;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + nx, cy + ny);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+// ===== Presets =====
+function loadPreset(name) {
+  clearWavefunction();
+  clearPotential();
+  setWallBoundary(200);
+
+  // Highlight active preset button
+  document.querySelectorAll('.preset-btn').forEach(b => {
+    b.classList.remove('active');
+    if (b.textContent.toLowerCase().replace(/\s+/g, '_') === name ||
+        (name === 'free' && b.textContent === 'Free Particle') ||
+        (name === 'double_slit' && b.textContent === 'Double Slit') ||
+        (name === 'tunnel' && b.textContent === 'Tunneling') ||
+        (name === 'corral' && b.textContent === 'Quantum Corral') ||
+        (name === 'harmonic' && b.textContent === 'Harmonic Oscillator'))
+      b.classList.add('active');
+  });
+
+  stepCount = 0;
+
+  switch (name) {
+    case 'free':
+      sigma = 12;
+      momentum = 1.5;
+      dt = 0.1;
+      mass = 1.0;
+      initGaussian(N / 4, N / 2, momentum, 0);
+      break;
+
+    case 'double_slit':
+      sigma = 12;
+      momentum = 2.5;
+      dt = 0.1;
+      mass = 1.0;
+      addDoubleSlit(Math.floor(N * 0.45), 6, 30, 3, 150);
+      initGaussian(N / 5, N / 2, momentum, 0);
+      break;
+
+    case 'tunnel':
+      sigma = 12;
+      momentum = 2.0;
+      dt = 0.1;
+      mass = 1.0;
+      addBarrier(Math.floor(N * 0.5), 5, 30);
+      initGaussian(N / 4, N / 2, momentum, 0);
+      break;
+
+    case 'corral':
+      sigma = 8;
+      momentum = 3.0;
+      dt = 0.08;
+      mass = 1.0;
+      addCircularWall(N / 2, N / 2, 60, 4, 200);
+      initGaussian(N / 2 - 20, N / 2, momentum, 0.5);
+      break;
+
+    case 'harmonic':
+      sigma = 10;
+      momentum = 1.5;
+      dt = 0.08;
+      mass = 1.0;
+      clearPotential();
+      addHarmonicPotential(N / 2, N / 2, 0.02);
+      setWallBoundary(200);
+      initGaussian(N / 2 + 30, N / 2, 0, 0);
+      break;
+  }
+
+  // Update sliders to match
+  document.getElementById('slSigma').value = sigma;
+  document.getElementById('valSigma').textContent = sigma;
+  document.getElementById('slMomentum').value = momentum;
+  document.getElementById('valMomentum').textContent = momentum.toFixed(1);
+  document.getElementById('slDt').value = dt;
+  document.getElementById('valDt').textContent = dt.toFixed(2);
+  document.getElementById('slMass').value = mass;
+  document.getElementById('valMass').textContent = mass.toFixed(1);
+}
+
+// ===== UI Handlers =====
+function updateParam(name) {
+  switch (name) {
+    case 'sigma':
+      sigma = +document.getElementById('slSigma').value;
+      document.getElementById('valSigma').textContent = sigma;
+      break;
+    case 'momentum':
+      momentum = +document.getElementById('slMomentum').value;
+      document.getElementById('valMomentum').textContent = momentum.toFixed(1);
+      break;
+    case 'mass':
+      mass = +document.getElementById('slMass').value;
+      document.getElementById('valMass').textContent = mass.toFixed(1);
+      break;
+    case 'dt':
+      dt = +document.getElementById('slDt').value;
+      document.getElementById('valDt').textContent = dt.toFixed(2);
+      break;
+    case 'barrier':
+      barrierHeight = +document.getElementById('slBarrier').value;
+      document.getElementById('valBarrier').textContent = barrierHeight;
+      break;
+    case 'brush':
+      brushSize = +document.getElementById('slBrush').value;
+      document.getElementById('valBrush').textContent = brushSize;
+      break;
+    case 'bright':
+      brightness = +document.getElementById('slBright').value;
+      document.getElementById('valBright').textContent = brightness.toFixed(1);
+      break;
+    case 'speed':
+      stepsPerFrame = +document.getElementById('slSpeed').value;
+      document.getElementById('valSpeed').textContent = stepsPerFrame;
+      break;
+  }
+}
+
+function setViz(mode) {
+  vizMode = mode;
+  document.querySelectorAll('.viz-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('viz' + mode.charAt(0).toUpperCase() + mode.slice(1)).classList.add('active');
+}
+
+function setTool(tool) {
+  currentTool = tool;
+  document.querySelectorAll('.potential-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tool' + tool.charAt(0).toUpperCase() + tool.slice(1)).classList.add('active');
+}
+
+function togglePlay() {
+  running = !running;
+  document.getElementById('btnPlay').textContent = running ? 'Pause' : 'Play';
+  document.getElementById('btnPlay').classList.toggle('active', running);
+}
+
+function stepOnce() {
+  evolveADI();
+  render();
+  updateStatus();
+}
+
+function toggleCurrents() {
+  showCurrents = document.getElementById('chkCurrents').checked;
+}
+
+function resetSim() {
+  clearWavefunction();
+  clearPotential();
+  setWallBoundary(200);
+  stepCount = 0;
+  render();
+  updateStatus();
+}
+
+// ===== Mouse interaction =====
+let mouseDown = false;
+let mouseStartX = 0, mouseStartY = 0;
+
+canvas.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  const rect = canvas.getBoundingClientRect();
+  mouseStartX = Math.floor((e.clientX - rect.left) / canvasScale);
+  mouseStartY = Math.floor((e.clientY - rect.top) / canvasScale);
+
+  if (currentTool === 'draw' || currentTool === 'erase') {
+    paintPotential(mouseStartX, mouseStartY);
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (!mouseDown) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = Math.floor((e.clientX - rect.left) / canvasScale);
+  const my = Math.floor((e.clientY - rect.top) / canvasScale);
+
+  if (currentTool === 'draw' || currentTool === 'erase') {
+    paintPotential(mx, my);
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (!mouseDown) return;
+  mouseDown = false;
+  const rect = canvas.getBoundingClientRect();
+  const mx = Math.floor((e.clientX - rect.left) / canvasScale);
+  const my = Math.floor((e.clientY - rect.top) / canvasScale);
+
+  if (currentTool === 'wave') {
+    const ddx = mx - mouseStartX;
+    const ddy = my - mouseStartY;
+    const len = Math.sqrt(ddx * ddx + ddy * ddy);
+    let kx = 0, ky = 0;
+    if (len > 3) {
+      kx = (ddx / len) * momentum;
+      ky = (ddy / len) * momentum;
+    } else {
+      kx = momentum;
+      ky = 0;
+    }
+    initGaussian(mouseStartX, mouseStartY, kx, ky);
+    stepCount = 0;
+  }
+});
+
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+function paintPotential(x, y) {
+  const r = brushSize;
+  for (let dj = -r; dj <= r; dj++) {
+    for (let di = -r; di <= r; di++) {
+      if (di * di + dj * dj <= r * r) {
+        const px = x + di;
+        const py = y + dj;
+        if (px >= 0 && px < N && py >= 0 && py < N) {
+          V[py * N + px] = currentTool === 'draw' ? barrierHeight : 0;
+        }
+      }
+    }
+  }
+}
+
+// ===== Status =====
+function updateStatus() {
+  document.getElementById('statStep').textContent = stepCount;
+  document.getElementById('statNorm').textContent = computeNorm().toFixed(4);
+}
+
+// ===== Main loop =====
+let lastTime = performance.now();
+let frameCount = 0;
+let fps = 0;
+
+function mainLoop() {
+  if (running) {
+    for (let s = 0; s < stepsPerFrame; s++) {
+      evolveADI();
+    }
+    // Renormalize periodically to combat numerical drift
+    if (stepCount % 50 === 0) {
+      normalize();
+    }
+  }
+
+  render();
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastTime > 1000) {
+    fps = Math.round(frameCount * 1000 / (now - lastTime));
+    document.getElementById('statFps').textContent = fps;
+    frameCount = 0;
+    lastTime = now;
+    updateStatus();
+  }
+
+  requestAnimationFrame(mainLoop);
+}
+
+// ===== Optimize: pre-allocate Thomas algorithm arrays =====
+// Replace the per-call allocations with reusable buffers
+const thomasCpR = new Float64Array(N);
+const thomasCpI = new Float64Array(N);
+const thomasDpR = new Float64Array(N);
+const thomasDpI = new Float64Array(N);
+
+// Override solveTridiag to use pre-allocated arrays
+(function() {
+  const origSolve = solveTridiag;
+  window.solveTridiag = function(n, aRe, aIm, bRe, bIm, cRe, cIm, dRe, dIm, xRe, xIm) {
+    const cpR = thomasCpR;
+    const cpI = thomasCpI;
+    const dpR = thomasDpR;
+    const dpI = thomasDpI;
+
+    // Forward sweep
+    let d = bRe * bRe + bIm * bIm;
+    cpR[0] = (cRe * bRe + cIm * bIm) / d;
+    cpI[0] = (cIm * bRe - cRe * bIm) / d;
+    dpR[0] = (dRe[0] * bRe + dIm[0] * bIm) / d;
+    dpI[0] = (dIm[0] * bRe - dRe[0] * bIm) / d;
+
+    for (let i = 1; i < n; i++) {
+      const mR = aRe * cpR[i - 1] - aIm * cpI[i - 1];
+      const mI = aRe * cpI[i - 1] + aIm * cpR[i - 1];
+      const denomR = bRe - mR;
+      const denomI = bIm - mI;
+      d = denomR * denomR + denomI * denomI;
+
+      if (i < n - 1) {
+        cpR[i] = (cRe * denomR + cIm * denomI) / d;
+        cpI[i] = (cIm * denomR - cRe * denomI) / d;
+      }
+
+      const numR = dRe[i] - (aRe * dpR[i - 1] - aIm * dpI[i - 1]);
+      const numI = dIm[i] - (aRe * dpI[i - 1] + aIm * dpR[i - 1]);
+      dpR[i] = (numR * denomR + numI * denomI) / d;
+      dpI[i] = (numI * denomR - numR * denomI) / d;
+    }
+
+    xRe[n - 1] = dpR[n - 1];
+    xIm[n - 1] = dpI[n - 1];
+    for (let i = n - 2; i >= 0; i--) {
+      xRe[i] = dpR[i] - (cpR[i] * xRe[i + 1] - cpI[i] * xIm[i + 1]);
+      xIm[i] = dpI[i] - (cpR[i] * xIm[i + 1] + cpI[i] * xRe[i + 1]);
+    }
+  };
+})();
+
+// Also optimize solveTridiagVar
+(function() {
+  const cpR = new Float64Array(N);
+  const cpI = new Float64Array(N);
+  const dpR = new Float64Array(N);
+  const dpI = new Float64Array(N);
+
+  window.solveTridiagVar = function(n, col, beta, dRe, dIm, xRe, xIm) {
+    const aRe = 0, aIm = -beta;
+    const cRe = 0, cIm = -beta;
+
+    // b[0]
+    let gamma_half = V[col] * dt / (4.0 * hbar);
+    let bRe = 1, bIm = 2 * beta + gamma_half;
+    let d = bRe * bRe + bIm * bIm;
+    cpR[0] = (cRe * bRe + cIm * bIm) / d;
+    cpI[0] = (cIm * bRe - cRe * bIm) / d;
+    dpR[0] = (dRe[0] * bRe + dIm[0] * bIm) / d;
+    dpI[0] = (dIm[0] * bRe - dRe[0] * bIm) / d;
+
+    for (let j = 1; j < n; j++) {
+      gamma_half = V[j * N + col] * dt / (4.0 * hbar);
+      bRe = 1; bIm = 2 * beta + gamma_half;
+
+      const mR = aRe * cpR[j - 1] - aIm * cpI[j - 1];
+      const mI = aRe * cpI[j - 1] + aIm * cpR[j - 1];
+      const denomR = bRe - mR;
+      const denomI = bIm - mI;
+      d = denomR * denomR + denomI * denomI;
+
+      if (j < n - 1) {
+        cpR[j] = (cRe * denomR + cIm * denomI) / d;
+        cpI[j] = (cIm * denomR - cRe * denomI) / d;
+      }
+
+      const numR = dRe[j] - (aRe * dpR[j - 1] - aIm * dpI[j - 1]);
+      const numI = dIm[j] - (aRe * dpI[j - 1] + aIm * dpR[j - 1]);
+      dpR[j] = (numR * denomR + numI * denomI) / d;
+      dpI[j] = (numI * denomR - numR * denomI) / d;
+    }
+
+    xRe[n - 1] = dpR[n - 1];
+    xIm[n - 1] = dpI[n - 1];
+    for (let j = n - 2; j >= 0; j--) {
+      xRe[j] = dpR[j] - (cpR[j] * xRe[j + 1] - cpI[j] * xIm[j + 1]);
+      xIm[j] = dpI[j] - (cpR[j] * xIm[j + 1] + cpI[j] * xRe[j + 1]);
+    }
+  };
+})();
+
+// ===== Init =====
+window.addEventListener('resize', initCanvas);
+initCanvas();
+loadPreset('double_slit');
+mainLoop();
+</script>
+</body>
+</html>
