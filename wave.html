@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wave Interference Pattern Simulator</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --panel: #12121a;
+    --border: #2a2a3a;
+    --text: #c8c8d8;
+    --text-dim: #6a6a7a;
+    --accent: #4a9eff;
+    --accent2: #ff6a4a;
+    --accent3: #4aff9e;
+    --slider-track: #1e1e2e;
+    --slider-thumb: #4a9eff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  header h1 span { color: var(--accent); }
+
+  .header-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .main-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .canvas-container {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  #waveCanvas {
+    cursor: crosshair;
+    image-rendering: pixelated;
+  }
+
+  .sidebar {
+    width: 300px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar::-webkit-scrollbar { width: 6px; }
+  .sidebar::-webkit-scrollbar-track { background: var(--panel); }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .panel {
+    border-bottom: 1px solid var(--border);
+    padding: 12px;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+
+  .preset-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .btn {
+    background: var(--slider-track);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+    text-align: center;
+  }
+
+  .btn:hover { border-color: var(--accent); color: #fff; }
+  .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.small { padding: 4px 8px; font-size: 11px; }
+  .btn.danger { border-color: #ff4a4a; color: #ff4a4a; }
+  .btn.danger:hover { background: #ff4a4a; color: #fff; }
+
+  .viz-modes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .source-card {
+    background: var(--slider-track);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    margin-bottom: 8px;
+    transition: border-color 0.2s;
+  }
+
+  .source-card.selected { border-color: var(--accent); }
+  .source-card.disabled { opacity: 0.4; }
+
+  .source-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .source-label {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .source-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .source-actions {
+    display: flex;
+    gap: 4px;
+  }
+
+  .slider-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 5px;
+    gap: 8px;
+  }
+
+  .slider-row label {
+    font-size: 11px;
+    color: var(--text-dim);
+    width: 55px;
+    flex-shrink: 0;
+  }
+
+  .slider-row input[type="range"] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--slider-track);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--slider-thumb);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .slider-row .slider-val {
+    font-size: 11px;
+    color: var(--accent);
+    width: 40px;
+    text-align: right;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .measurement-panel {
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .measurement-panel .label { color: var(--text-dim); }
+  .measurement-panel .value { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  .physics-eq {
+    font-family: 'Cambria Math', 'Latin Modern Math', Georgia, serif;
+    font-size: 13px;
+    background: rgba(74, 158, 255, 0.06);
+    border: 1px solid rgba(74, 158, 255, 0.15);
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 6px;
+    line-height: 1.6;
+    color: #e0e0f0;
+  }
+
+  .physics-eq .var { color: var(--accent); font-style: italic; }
+  .physics-eq .op { color: var(--text-dim); }
+
+  .toggle-switch {
+    position: relative;
+    width: 32px;
+    height: 18px;
+    background: var(--slider-track);
+    border-radius: 9px;
+    cursor: pointer;
+    transition: background 0.2s;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .toggle-switch.on { background: var(--accent); border-color: var(--accent); }
+
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+
+  .toggle-switch.on::after { transform: translateX(14px); }
+
+  .info-bar {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(18, 18, 26, 0.9);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 11px;
+    pointer-events: none;
+    z-index: 5;
+    max-width: 350px;
+    backdrop-filter: blur(8px);
+  }
+
+  .info-bar .row { display: flex; gap: 16px; }
+  .info-bar .label { color: var(--text-dim); }
+  .info-bar .value { color: var(--accent); font-variant-numeric: tabular-nums; }
+
+  .crosshair-info {
+    position: absolute;
+    background: rgba(18, 18, 26, 0.92);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 11px;
+    pointer-events: none;
+    z-index: 6;
+    display: none;
+    backdrop-filter: blur(8px);
+  }
+
+  .cross-section-overlay {
+    position: absolute;
+    bottom: 10px;
+    right: 320px;
+    width: 300px;
+    height: 120px;
+    background: rgba(18, 18, 26, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    z-index: 5;
+    display: none;
+    backdrop-filter: blur(8px);
+  }
+
+  .nodal-legend {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .nodal-legend .swatch {
+    width: 12px;
+    height: 3px;
+    border-radius: 2px;
+  }
+
+  .speed-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+
+  .speed-control input[type="range"] {
+    width: 80px;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--slider-track);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .speed-control input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    background: var(--slider-thumb);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  #crossSectionCanvas {
+    width: 100%;
+    height: 100%;
+    border-radius: 6px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>Wave</span> Interference Simulator</h1>
+  <div class="header-controls">
+    <div class="speed-control">
+      <span style="color:var(--text-dim)">Speed</span>
+      <input type="range" id="speedSlider" min="0.1" max="3" step="0.1" value="1">
+      <span id="speedVal" style="color:var(--accent);width:30px;text-align:right">1.0x</span>
+    </div>
+    <button class="btn small" id="btnPause">Pause</button>
+    <button class="btn small" id="btnReset">Reset</button>
+    <button class="btn small" id="btnExportPNG">Save PNG</button>
+    <button class="btn small" id="btnExportJSON">Save JSON</button>
+  </div>
+</header>
+
+<div class="main-layout">
+  <div class="canvas-container" id="canvasContainer">
+    <canvas id="waveCanvas"></canvas>
+    <div class="info-bar" id="infoBar">
+      <div class="row">
+        <span><span class="label">Sources:</span> <span class="value" id="infoSources">0</span></span>
+        <span><span class="label">FPS:</span> <span class="value" id="infoFPS">0</span></span>
+        <span><span class="label">Grid:</span> <span class="value" id="infoGrid">0x0</span></span>
+        <span><span class="label">Time:</span> <span class="value" id="infoTime">0.0s</span></span>
+      </div>
+    </div>
+    <div class="crosshair-info" id="crosshairInfo"></div>
+    <div class="cross-section-overlay" id="crossSectionOverlay">
+      <canvas id="crossSectionCanvas"></canvas>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="panel">
+      <div class="panel-title">Presets</div>
+      <div class="preset-grid">
+        <button class="btn" data-preset="single">Single Source</button>
+        <button class="btn" data-preset="double">Double Slit</button>
+        <button class="btn" data-preset="triple">Triple Slit</button>
+        <button class="btn" data-preset="ring">Circular Array</button>
+        <button class="btn" data-preset="standing">Standing Wave</button>
+        <button class="btn" data-preset="custom">Custom</button>
+        <button class="btn danger" data-preset="clear">Clear All</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Visualization</div>
+      <div class="viz-modes">
+        <button class="btn active" data-viz="intensity">Intensity</button>
+        <button class="btn" data-viz="height">Height Field</button>
+        <button class="btn" data-viz="phase">Phase Map</button>
+        <button class="btn" data-viz="energy">Energy Density</button>
+      </div>
+      <div style="margin-top:10px">
+        <div class="slider-row">
+          <label>Damping</label>
+          <input type="range" id="dampingSlider" min="0" max="0.05" step="0.001" value="0">
+          <span class="slider-val" id="dampingVal">0.000</span>
+        </div>
+        <div class="slider-row">
+          <label>Wave Speed</label>
+          <input type="range" id="waveSpeedSlider" min="20" max="300" step="5" value="120">
+          <span class="slider-val" id="waveSpeedVal">120</span>
+        </div>
+      </div>
+      <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+        <div class="toggle-switch" id="toggleNodelines"></div>
+        <span style="font-size:12px">Show nodal lines</span>
+      </div>
+      <div style="margin-top:6px; display:flex; gap:8px; align-items:center;">
+        <div class="toggle-switch" id="toggleColor"></div>
+        <span style="font-size:12px">Interference coloring</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Microphone Input</div>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+        <button class="btn small" id="btnMic">Enable Mic</button>
+        <span style="font-size:11px; color:var(--text-dim);" id="micStatus"></span>
+      </div>
+      <canvas id="micSpectrum" width="276" height="50" style="width:100%;height:50px;border-radius:4px;background:#0a0a0f;display:none;"></canvas>
+      <div id="micControls" style="display:none; margin-top:6px;">
+        <div class="slider-row">
+          <label>Gain</label>
+          <input type="range" id="micGain" min="0.2" max="8" step="0.1" value="3">
+          <span class="slider-val" id="micGainVal">3.0</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Measurement</div>
+      <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <button class="btn small active" id="toolPoint" data-tool="point">Point Probe</button>
+        <button class="btn small" id="toolLine" data-tool="line">Cross Section</button>
+      </div>
+      <div class="measurement-panel" id="measurementData">
+        <div><span class="label">Click on the wave tank to measure</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Sources <span style="color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0">(click canvas to add)</span></div>
+      <div id="sourcesContainer"></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Physics</div>
+      <div class="physics-eq" id="physicsEq">
+        <div><span class="var">y</span>(<span class="var">r</span>, <span class="var">t</span>) = <span class="op">&Sigma;</span> <span class="var">A<sub>i</sub></span> sin(2&pi;<span class="var">f<sub>i</sub></span><span class="var">t</span> &minus; <span class="var">k<sub>i</sub></span><span class="var">r<sub>i</sub></span> + <span class="var">&phi;<sub>i</sub></span>)</div>
+        <div style="margin-top:4px;font-size:11px;color:var(--text-dim)">
+          Constructive: &Delta;&phi; = 2n&pi;<br>
+          Destructive: &Delta;&phi; = (2n+1)&pi;
+        </div>
+      </div>
+      <div id="pathDiffInfo" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// WAVE INTERFERENCE SIMULATOR
+// ============================================================
+
+const GRID = 500;
+const SOURCE_COLORS = [
+  '#4a9eff','#ff6a4a','#4aff9e','#ffcf4a','#cf4aff',
+  '#ff4a9e','#4affcf','#ff9e4a','#9e4aff','#4acfff'
+];
+
+// State
+let sources = [];
+let simTime = 0;
+let paused = false;
+let speed = 1;
+let vizMode = 'intensity';
+let damping = 0;
+let waveSpeed = 120;
+let showNodelines = false;
+let colorMode = false;
+let micActive = false;
+let audioCtx = null;
+let analyser = null;
+let micStream = null;
+let freqData = null;
+let micFrameCount = 0;
+let activeTool = 'point';
+let measurePoint = null;
+let crossLineStart = null;
+let crossLineEnd = null;
+let draggingSource = null;
+let selectedSource = null;
+let lastFrameTime = 0;
+let fps = 0;
+let fpsCounter = 0;
+let fpsTime = 0;
+
+// Canvas
+const canvas = document.getElementById('waveCanvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: false });
+const container = document.getElementById('canvasContainer');
+
+// Offscreen for computation
+let imageData;
+let pixelBuf;
+
+// Cross-section canvas
+const csCanvas = document.getElementById('crossSectionCanvas');
+const csCtx = csCanvas.getContext('2d');
+
+// Pre-compute wave buffer
+let waveBuf = new Float32Array(GRID * GRID);
+
+function resizeCanvas() {
+  const rect = container.getBoundingClientRect();
+  const size = Math.min(rect.width - 20, rect.height - 20);
+  canvas.width = GRID;
+  canvas.height = GRID;
+  canvas.style.width = size + 'px';
+  canvas.style.height = size + 'px';
+  imageData = ctx.createImageData(GRID, GRID);
+  pixelBuf = imageData.data;
+}
+
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// ============================================================
+// SOURCE MANAGEMENT
+// ============================================================
+
+function createSource(x, y, freq = 3, amp = 1, phase = 0, enabled = true) {
+  if (sources.length >= 10) return null;
+  const s = {
+    id: Date.now() + Math.random(),
+    x, y, // in grid coords [0, GRID)
+    freq,
+    amp,
+    phase: phase * Math.PI / 180,
+    phaseDeg: phase,
+    enabled,
+    color: SOURCE_COLORS[sources.length % SOURCE_COLORS.length]
+  };
+  sources.push(s);
+  rebuildSourceUI();
+  return s;
+}
+
+function removeSource(id) {
+  sources = sources.filter(s => s.id !== id);
+  if (selectedSource && selectedSource.id === id) selectedSource = null;
+  rebuildSourceUI();
+}
+
+function clearSources() {
+  sources = [];
+  selectedSource = null;
+  simTime = 0;
+  rebuildSourceUI();
+}
+
+// ============================================================
+// PRESETS
+// ============================================================
+
+function loadPreset(name) {
+  clearSources();
+  const cx = GRID / 2, cy = GRID / 2;
+  switch (name) {
+    case 'single':
+      createSource(cx, cy, 3, 1, 0);
+      break;
+    case 'double':
+      createSource(cx, cy - 60, 4, 1, 0);
+      createSource(cx, cy + 60, 4, 1, 0);
+      break;
+    case 'triple':
+      createSource(cx, cy - 80, 4, 1, 0);
+      createSource(cx, cy, 4, 1, 0);
+      createSource(cx, cy + 80, 4, 1, 0);
+      break;
+    case 'ring': {
+      const r = 120;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        createSource(cx + r * Math.cos(a), cy + r * Math.sin(a), 3, 1, 0);
+      }
+      break;
+    }
+    case 'standing':
+      createSource(cx - 150, cy, 3, 1, 0);
+      createSource(cx + 150, cy, 3, 1, 0);
+      break;
+    case 'custom':
+      break;
+    case 'clear':
+      break;
+  }
+}
+
+// ============================================================
+// WAVE COMPUTATION (hot loop — optimized)
+// ============================================================
+
+function computeWaves() {
+  const ns = sources.length;
+  if (ns === 0) {
+    waveBuf.fill(0);
+    return;
+  }
+
+  // Pre-extract source data into flat arrays for speed
+  const sx = new Float64Array(ns);
+  const sy = new Float64Array(ns);
+  const sf = new Float64Array(ns);
+  const sa = new Float64Array(ns);
+  const sp = new Float64Array(ns);
+  const se = new Uint8Array(ns);
+  let activeCount = 0;
+
+  for (let i = 0; i < ns; i++) {
+    const s = sources[i];
+    sx[i] = s.x;
+    sy[i] = s.y;
+    sf[i] = s.freq;
+    sa[i] = s.amp;
+    sp[i] = s.phase;
+    se[i] = s.enabled ? 1 : 0;
+    if (s.enabled) activeCount++;
+  }
+
+  if (activeCount === 0) {
+    waveBuf.fill(0);
+    return;
+  }
+
+  const TWO_PI = Math.PI * 2;
+  const t = simTime;
+  const v = waveSpeed;
+  const damp = damping;
+
+  // Process in row-major order for cache friendliness
+  for (let gy = 0; gy < GRID; gy++) {
+    const offset = gy * GRID;
+    for (let gx = 0; gx < GRID; gx++) {
+      let val = 0;
+      for (let i = 0; i < ns; i++) {
+        if (!se[i]) continue;
+        const dx = gx - sx[i];
+        const dy = gy - sy[i];
+        const r = Math.sqrt(dx * dx + dy * dy);
+        const k = TWO_PI * sf[i] / v;
+        let a = sa[i];
+        if (damp > 0 && r > 0) {
+          a *= Math.exp(-damp * r);
+        }
+        // Attenuation with distance (2D circular: 1/sqrt(r))
+        if (r > 1) a /= Math.sqrt(r);
+        val += a * Math.sin(TWO_PI * sf[i] * t - k * r + sp[i]);
+      }
+      waveBuf[offset + gx] = val;
+    }
+  }
+}
+
+// ============================================================
+// RENDERING
+// ============================================================
+
+function renderIntensity() {
+  const data = pixelBuf;
+  const showNodal = showNodelines;
+  for (let i = 0, len = GRID * GRID; i < len; i++) {
+    const v = waveBuf[i];
+    const idx = i * 4;
+    if (showNodal && Math.abs(v) < 0.04) {
+      data[idx] = 255;
+      data[idx + 1] = 255;
+      data[idx + 2] = 0;
+      data[idx + 3] = 255;
+      continue;
+    }
+    // Map to color: dark blue (negative) -> black (zero) -> bright cyan/white (positive)
+    const intensity = v * 0.5 + 0.5; // [0, 1] roughly
+    const clamped = Math.max(0, Math.min(1, intensity));
+    const sq = clamped * clamped;
+    // Deep blue/teal gradient
+    data[idx]     = Math.floor(sq * 40);                    // R
+    data[idx + 1] = Math.floor(sq * 180 + (1 - sq) * 10);   // G
+    data[idx + 2] = Math.floor(sq * 255 + (1 - sq) * 30);   // B
+    data[idx + 3] = 255;
+  }
+}
+
+function renderHeight() {
+  const data = pixelBuf;
+  for (let i = 0, len = GRID * GRID; i < len; i++) {
+    const v = waveBuf[i];
+    const idx = i * 4;
+    // Pseudo-3D: combine value with gradient for shading
+    const gy = (i / GRID) | 0;
+    const gx = i % GRID;
+    const norm = v * 0.4 + 0.5;
+    const clamped = Math.max(0, Math.min(1, norm));
+    // Compute gradient for pseudo-lighting
+    let dxv = 0, dyv = 0;
+    if (gx > 0 && gx < GRID - 1) dxv = waveBuf[gy * GRID + gx + 1] - waveBuf[gy * GRID + gx - 1];
+    if (gy > 0 && gy < GRID - 1) dyv = waveBuf[(gy + 1) * GRID + gx] - waveBuf[(gy - 1) * GRID + gx];
+    const shade = Math.max(0, Math.min(1, 0.5 + dxv * 0.8 - dyv * 0.5));
+    const bright = clamped * shade;
+    data[idx]     = Math.floor(bright * 200 + clamped * 55);
+    data[idx + 1] = Math.floor(bright * 150 + clamped * 40);
+    data[idx + 2] = Math.floor(bright * 80 + clamped * 60);
+    data[idx + 3] = 255;
+  }
+}
+
+function renderPhase() {
+  const data = pixelBuf;
+  const TWO_PI = Math.PI * 2;
+  for (let i = 0, len = GRID * GRID; i < len; i++) {
+    const v = waveBuf[i];
+    const idx = i * 4;
+    // Use atan2 of value vs hypothetical derivative to approximate phase
+    // Simpler: just map value range to hue
+    const phase = (Math.atan2(v, Math.abs(v) + 0.001) / Math.PI + 1) * 0.5;
+    // HSL-like mapping
+    const h = v * 0.5 + 0.5; // [-1,1] -> [0,1]
+    const clamped = Math.max(0, Math.min(1, h));
+    // Rainbow
+    const hue = clamped * 360;
+    const [r, g, b] = hslToRgb(hue / 360, 0.8, 0.4 + Math.abs(v) * 0.15);
+    data[idx] = r;
+    data[idx + 1] = g;
+    data[idx + 2] = b;
+    data[idx + 3] = 255;
+  }
+}
+
+function renderEnergy() {
+  const data = pixelBuf;
+  for (let i = 0, len = GRID * GRID; i < len; i++) {
+    const v = waveBuf[i];
+    const energy = v * v; // proportional to energy density
+    const idx = i * 4;
+    const e = Math.min(1, energy * 0.6);
+    const sq = Math.sqrt(e);
+    // Hot colormap: black -> red -> yellow -> white
+    if (e < 0.33) {
+      const t = e / 0.33;
+      data[idx] = Math.floor(t * 255);
+      data[idx + 1] = 0;
+      data[idx + 2] = Math.floor(t * 30);
+    } else if (e < 0.66) {
+      const t = (e - 0.33) / 0.33;
+      data[idx] = 255;
+      data[idx + 1] = Math.floor(t * 200);
+      data[idx + 2] = 0;
+    } else {
+      const t = (e - 0.66) / 0.34;
+      data[idx] = 255;
+      data[idx + 1] = 200 + Math.floor(t * 55);
+      data[idx + 2] = Math.floor(t * 255);
+    }
+    data[idx + 3] = 255;
+  }
+}
+
+function applyInterferenceColor() {
+  const data = pixelBuf;
+  const TWO_PI = Math.PI * 2;
+  const phi = 1.6180339887;
+  const scale = 3.0;
+
+  for (let i = 0, len = GRID * GRID; i < len; i++) {
+    const idx = i * 4;
+    const v = waveBuf[i];
+    const lum = (data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114) / 255;
+    const rv = v * scale;
+    const cr = 0.5 + 0.5 * Math.sin(TWO_PI * rv);
+    const cg = 0.5 + 0.5 * Math.sin(TWO_PI * rv * phi);
+    const cb = 0.5 + 0.5 * Math.sin(TWO_PI * rv * Math.PI);
+
+    if (vizMode === 'energy') {
+      const inv = 1 - lum;
+      data[idx]     = Math.floor((data[idx]     + cr * inv * 255) * 0.5);
+      data[idx + 1] = Math.floor((data[idx + 1] + cg * inv * 255) * 0.5);
+      data[idx + 2] = Math.floor((data[idx + 2] + cb * inv * 255) * 0.5);
+    } else {
+      data[idx]     = Math.floor(cr * lum * 255);
+      data[idx + 1] = Math.floor(cg * lum * 255);
+      data[idx + 2] = Math.floor(cb * lum * 255);
+    }
+  }
+}
+
+// ============================================================
+// MICROPHONE ENGINE
+// ============================================================
+
+async function startMic() {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const src = audioCtx.createMediaStreamSource(micStream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.8;
+    src.connect(analyser);
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+
+    micActive = true;
+    micFrameCount = 0;
+    document.getElementById('btnMic').textContent = 'Disable Mic';
+    document.getElementById('btnMic').classList.add('active');
+    document.getElementById('micStatus').textContent = 'Listening...';
+    document.getElementById('micSpectrum').style.display = 'block';
+    document.getElementById('micControls').style.display = 'block';
+  } catch (err) {
+    document.getElementById('micStatus').textContent = 'Denied';
+  }
+}
+
+function stopMic() {
+  micActive = false;
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (audioCtx) { audioCtx.close(); audioCtx = null; }
+  analyser = null;
+  freqData = null;
+  document.getElementById('btnMic').textContent = 'Enable Mic';
+  document.getElementById('btnMic').classList.remove('active');
+  document.getElementById('micStatus').textContent = '';
+  document.getElementById('micSpectrum').style.display = 'none';
+  document.getElementById('micControls').style.display = 'none';
+}
+
+function processMic() {
+  if (!micActive || !analyser) return;
+  analyser.getByteFrequencyData(freqData);
+
+  const gain = parseFloat(document.getElementById('micGain').value);
+  const sr = audioCtx.sampleRate;
+  const binHz = sr / analyser.fftSize;
+  const minBin = Math.ceil(80 / binHz);
+  const maxBin = Math.min(freqData.length - 1, Math.floor(3000 / binHz));
+
+  // Collect all peaks above noise floor
+  const peaks = [];
+  for (let i = minBin + 1; i < maxBin; i++) {
+    if (freqData[i] > freqData[i - 1] && freqData[i] > freqData[i + 1] && freqData[i] > 20) {
+      peaks.push({ freq: i * binHz, mag: freqData[i] / 255 });
+    }
+  }
+  peaks.sort((a, b) => b.mag - a.mag);
+
+  // Map peaks to active sources
+  const active = sources.filter(s => s.enabled);
+  if (active.length === 0 || peaks.length === 0) {
+    drawMicSpectrum(minBin, maxBin);
+    return;
+  }
+
+  for (let i = 0; i < active.length; i++) {
+    const s = active[i];
+    if (i < peaks.length) {
+      const p = peaks[i];
+      // Map audio freq to sim freq via log scale
+      const logPos = Math.log2(p.freq / 80) / Math.log2(3000 / 80);
+      const targetFreq = 0.5 + Math.max(0, Math.min(1, logPos)) * 9.5;
+      const targetAmp = Math.min(1, p.mag * gain);
+
+      // Smooth — don't snap, glide
+      s.freq += (targetFreq - s.freq) * 0.08;
+      s.amp += (targetAmp - s.amp) * 0.12;
+    }
+    // Don't fade sources with no peak — just hold last value
+  }
+
+  // Only rebuild UI every 10 frames to avoid DOM thrashing
+  micFrameCount++;
+  if (micFrameCount % 10 === 0) rebuildSourceUI();
+
+  drawMicSpectrum(minBin, maxBin);
+}
+
+function drawMicSpectrum(minBin, maxBin) {
+  const c = document.getElementById('micSpectrum');
+  const x = c.getContext('2d');
+  const w = c.width, h = c.height;
+  x.fillStyle = '#0a0a0f';
+  x.fillRect(0, 0, w, h);
+  if (!freqData) return;
+
+  const range = maxBin - minBin;
+  for (let i = minBin; i < maxBin; i++) {
+    const val = freqData[i] / 255;
+    const bx = ((i - minBin) / range) * w;
+    const bw = Math.max(1, w / range);
+    const bh = val * h;
+    const hue = ((i - minBin) / range) * 270;
+    x.fillStyle = `hsl(${hue},70%,${20 + val * 40}%)`;
+    x.fillRect(bx, h - bh, bw, bh);
+  }
+}
+
+function hslToRgb(h, s, l) {
+  let r, g, b;
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    r = hue2rgb(p, q, h + 1/3);
+    g = hue2rgb(p, q, h);
+    b = hue2rgb(p, q, h - 1/3);
+  }
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function drawSources() {
+  const rect = canvas.getBoundingClientRect();
+  const scale = GRID / rect.width;
+  // Draw sources as circles on the canvas
+  for (const s of sources) {
+    if (!s.enabled) continue;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = s.color;
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+  // Draw cross-section line if active
+  if (crossLineStart && crossLineEnd) {
+    ctx.beginPath();
+    ctx.moveTo(crossLineStart.x, crossLineStart.y);
+    ctx.lineTo(crossLineEnd.x, crossLineEnd.y);
+    ctx.strokeStyle = 'rgba(255,255,0,0.8)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // Draw measurement point
+  if (measurePoint) {
+    ctx.beginPath();
+    ctx.arc(measurePoint.x, measurePoint.y, 4, 0, Math.PI * 2);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(measurePoint.x, measurePoint.y, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+// ============================================================
+// CROSS-SECTION
+// ============================================================
+
+function drawCrossSection() {
+  if (!crossLineStart || !crossLineEnd) return;
+  const overlay = document.getElementById('crossSectionOverlay');
+  overlay.style.display = 'block';
+  csCanvas.width = 300;
+  csCanvas.height = 120;
+
+  const samples = 200;
+  const vals = [];
+  for (let i = 0; i < samples; i++) {
+    const t = i / (samples - 1);
+    const gx = Math.round(crossLineStart.x + t * (crossLineEnd.x - crossLineStart.x));
+    const gy = Math.round(crossLineStart.y + t * (crossLineEnd.y - crossLineStart.y));
+    if (gx >= 0 && gx < GRID && gy >= 0 && gy < GRID) {
+      vals.push(waveBuf[gy * GRID + gx]);
+    } else {
+      vals.push(0);
+    }
+  }
+
+  csCtx.fillStyle = 'rgba(10,10,15,0.95)';
+  csCtx.fillRect(0, 0, 300, 120);
+
+  // Grid lines
+  csCtx.strokeStyle = 'rgba(255,255,255,0.05)';
+  csCtx.lineWidth = 1;
+  for (let y = 20; y <= 100; y += 20) {
+    csCtx.beginPath();
+    csCtx.moveTo(10, y);
+    csCtx.lineTo(290, y);
+    csCtx.stroke();
+  }
+
+  // Zero line
+  csCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+  csCtx.beginPath();
+  csCtx.moveTo(10, 60);
+  csCtx.lineTo(290, 60);
+  csCtx.stroke();
+
+  // Plot
+  csCtx.beginPath();
+  csCtx.strokeStyle = '#4a9eff';
+  csCtx.lineWidth = 1.5;
+  for (let i = 0; i < vals.length; i++) {
+    const x = 10 + (i / (vals.length - 1)) * 280;
+    const y = 60 - vals[i] * 30;
+    if (i === 0) csCtx.moveTo(x, y);
+    else csCtx.lineTo(x, y);
+  }
+  csCtx.stroke();
+
+  // Label
+  csCtx.fillStyle = 'rgba(200,200,220,0.6)';
+  csCtx.font = '10px sans-serif';
+  csCtx.fillText('Cross Section', 12, 14);
+}
+
+// ============================================================
+// MEASUREMENT
+// ============================================================
+
+function updateMeasurement() {
+  const panel = document.getElementById('measurementData');
+  if (!measurePoint) {
+    panel.innerHTML = '<div><span class="label">Click on the wave tank to measure</span></div>';
+    return;
+  }
+  const gx = Math.round(measurePoint.x);
+  const gy = Math.round(measurePoint.y);
+  if (gx < 0 || gx >= GRID || gy < 0 || gy >= GRID) return;
+
+  const val = waveBuf[gy * GRID + gx];
+  const energy = val * val;
+
+  let html = `<div><span class="label">Position:</span> <span class="value">(${gx}, ${gy})</span></div>`;
+  html += `<div><span class="label">Amplitude:</span> <span class="value">${val.toFixed(4)}</span></div>`;
+  html += `<div><span class="label">Energy:</span> <span class="value">${energy.toFixed(4)}</span></div>`;
+
+  // Path differences from each source
+  if (sources.length >= 2) {
+    html += `<div style="margin-top:4px;font-size:11px;color:var(--text-dim)">Path differences:</div>`;
+    const dists = sources.filter(s => s.enabled).map(s => {
+      const dx = gx - s.x, dy = gy - s.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    });
+    for (let i = 0; i < dists.length; i++) {
+      for (let j = i + 1; j < dists.length; j++) {
+        const diff = Math.abs(dists[i] - dists[j]);
+        const activeSources = sources.filter(s => s.enabled);
+        const lambda = waveSpeed / activeSources[i].freq;
+        const nLambda = diff / lambda;
+        const type = (Math.abs(nLambda - Math.round(nLambda)) < 0.15) ?
+          '<span style="color:#4aff9e">constructive</span>' :
+          (Math.abs(nLambda - Math.round(nLambda) - 0.5) < 0.15 || Math.abs(nLambda - Math.round(nLambda) + 0.5) < 0.15) ?
+          '<span style="color:#ff6a4a">destructive</span>' : '';
+        html += `<div><span class="label">S${i+1}-S${j+1}:</span> <span class="value">${diff.toFixed(1)} px = ${nLambda.toFixed(2)}&lambda;</span> ${type}</div>`;
+      }
+    }
+  }
+
+  panel.innerHTML = html;
+}
+
+function updatePhysicsPanel() {
+  const info = document.getElementById('pathDiffInfo');
+  if (sources.length === 0) {
+    info.innerHTML = '';
+    return;
+  }
+  const active = sources.filter(s => s.enabled);
+  let html = '';
+  for (let i = 0; i < active.length; i++) {
+    const s = active[i];
+    const lambda = (waveSpeed / s.freq).toFixed(1);
+    const k = (2 * Math.PI * s.freq / waveSpeed).toFixed(4);
+    html += `<div style="color:${s.color};font-size:11px">S${i+1}: &lambda;=${lambda}px, k=${k}, f=${s.freq.toFixed(1)}Hz, &phi;=${s.phaseDeg.toFixed(0)}&deg;</div>`;
+  }
+  info.innerHTML = html;
+}
+
+// ============================================================
+// SOURCE UI
+// ============================================================
+
+function rebuildSourceUI() {
+  const container = document.getElementById('sourcesContainer');
+  container.innerHTML = '';
+  for (let i = 0; i < sources.length; i++) {
+    const s = sources[i];
+    const card = document.createElement('div');
+    card.className = 'source-card' + (selectedSource && selectedSource.id === s.id ? ' selected' : '') + (!s.enabled ? ' disabled' : '');
+    card.dataset.id = s.id;
+    card.innerHTML = `
+      <div class="source-header">
+        <div class="source-label">
+          <span class="source-dot" style="background:${s.color}"></span>
+          Source ${i + 1}
+        </div>
+        <div class="source-actions">
+          <div class="toggle-switch ${s.enabled ? 'on' : ''}" data-toggle="${s.id}"></div>
+          <button class="btn small danger" data-remove="${s.id}">&times;</button>
+        </div>
+      </div>
+      <div class="slider-row">
+        <label>Freq</label>
+        <input type="range" min="0.5" max="10" step="0.1" value="${s.freq}" data-param="freq" data-sid="${s.id}">
+        <span class="slider-val">${s.freq.toFixed(1)}</span>
+      </div>
+      <div class="slider-row">
+        <label>Amplitude</label>
+        <input type="range" min="0" max="1" step="0.01" value="${s.amp}" data-param="amp" data-sid="${s.id}">
+        <span class="slider-val">${s.amp.toFixed(2)}</span>
+      </div>
+      <div class="slider-row">
+        <label>Phase</label>
+        <input type="range" min="0" max="360" step="1" value="${s.phaseDeg}" data-param="phase" data-sid="${s.id}">
+        <span class="slider-val">${s.phaseDeg.toFixed(0)}&deg;</span>
+      </div>
+    `;
+    container.appendChild(card);
+  }
+
+  // Attach events
+  container.querySelectorAll('[data-toggle]').forEach(el => {
+    el.addEventListener('click', () => {
+      const s = sources.find(s => s.id == el.dataset.toggle);
+      if (s) { s.enabled = !s.enabled; rebuildSourceUI(); }
+    });
+  });
+  container.querySelectorAll('[data-remove]').forEach(el => {
+    el.addEventListener('click', () => removeSource(parseFloat(el.dataset.remove)));
+  });
+  container.querySelectorAll('input[type="range"]').forEach(el => {
+    el.addEventListener('input', () => {
+      const s = sources.find(s => s.id == el.dataset.sid);
+      if (!s) return;
+      const v = parseFloat(el.value);
+      if (el.dataset.param === 'freq') {
+        s.freq = v;
+        el.nextElementSibling.textContent = v.toFixed(1);
+      } else if (el.dataset.param === 'amp') {
+        s.amp = v;
+        el.nextElementSibling.textContent = v.toFixed(2);
+      } else if (el.dataset.param === 'phase') {
+        s.phaseDeg = v;
+        s.phase = v * Math.PI / 180;
+        el.nextElementSibling.textContent = v.toFixed(0) + '\u00b0';
+      }
+    });
+  });
+  container.querySelectorAll('.source-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON' || e.target.classList.contains('toggle-switch')) return;
+      const s = sources.find(s => s.id == card.dataset.id);
+      selectedSource = (selectedSource && selectedSource.id === s.id) ? null : s;
+      rebuildSourceUI();
+    });
+  });
+
+  document.getElementById('infoSources').textContent = sources.filter(s => s.enabled).length;
+  updatePhysicsPanel();
+}
+
+// ============================================================
+// CANVAS INTERACTION
+// ============================================================
+
+function canvasToGrid(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) / rect.width * GRID,
+    y: (e.clientY - rect.top) / rect.height * GRID
+  };
+}
+
+let mouseDown = false;
+let lineDrawing = false;
+
+canvas.addEventListener('mousedown', (e) => {
+  const p = canvasToGrid(e);
+  mouseDown = true;
+
+  // Check if clicking near a source (for dragging)
+  for (const s of sources) {
+    const dx = p.x - s.x, dy = p.y - s.y;
+    if (dx * dx + dy * dy < 200) {
+      draggingSource = s;
+      return;
+    }
+  }
+
+  if (activeTool === 'line') {
+    crossLineStart = p;
+    crossLineEnd = null;
+    lineDrawing = true;
+    return;
+  }
+
+  if (activeTool === 'point') {
+    measurePoint = p;
+    updateMeasurement();
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  const p = canvasToGrid(e);
+
+  // Update crosshair info
+  const gx = Math.round(p.x), gy = Math.round(p.y);
+  if (gx >= 0 && gx < GRID && gy >= 0 && gy < GRID) {
+    const val = waveBuf[gy * GRID + gx];
+    const info = document.getElementById('crosshairInfo');
+    info.style.display = 'block';
+    info.style.left = (e.clientX - container.getBoundingClientRect().left + 15) + 'px';
+    info.style.top = (e.clientY - container.getBoundingClientRect().top - 10) + 'px';
+    info.innerHTML = `<span style="color:var(--text-dim)">(${gx},${gy})</span> <span style="color:var(--accent)">${val.toFixed(3)}</span>`;
+  }
+
+  if (draggingSource && mouseDown) {
+    draggingSource.x = Math.max(0, Math.min(GRID - 1, p.x));
+    draggingSource.y = Math.max(0, Math.min(GRID - 1, p.y));
+    return;
+  }
+
+  if (lineDrawing && mouseDown) {
+    crossLineEnd = p;
+    return;
+  }
+
+  if (activeTool === 'point' && mouseDown) {
+    measurePoint = p;
+    updateMeasurement();
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (draggingSource) {
+    draggingSource = null;
+    mouseDown = false;
+    return;
+  }
+  if (lineDrawing) {
+    lineDrawing = false;
+    mouseDown = false;
+    return;
+  }
+  mouseDown = false;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  document.getElementById('crosshairInfo').style.display = 'none';
+});
+
+canvas.addEventListener('dblclick', (e) => {
+  const p = canvasToGrid(e);
+  // Double-click to add source
+  createSource(p.x, p.y);
+});
+
+// Single click to add source (if not near existing)
+canvas.addEventListener('click', (e) => {
+  if (draggingSource) return;
+  if (activeTool === 'line') return;
+  const p = canvasToGrid(e);
+  // Check not near existing source
+  for (const s of sources) {
+    const dx = p.x - s.x, dy = p.y - s.y;
+    if (dx * dx + dy * dy < 200) return;
+  }
+  if (activeTool === 'point' && !e.shiftKey) return; // point tool = measure
+  // Shift+click or default: add source
+});
+
+// Shift+click always adds source
+canvas.addEventListener('click', (e) => {
+  if (!e.shiftKey) return;
+  const p = canvasToGrid(e);
+  for (const s of sources) {
+    const dx = p.x - s.x, dy = p.y - s.y;
+    if (dx * dx + dy * dy < 200) return;
+  }
+  createSource(p.x, p.y);
+});
+
+// Right-click to add source
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const p = canvasToGrid(e);
+  createSource(p.x, p.y);
+});
+
+// ============================================================
+// UI CONTROLS
+// ============================================================
+
+// Presets
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.addEventListener('click', () => loadPreset(btn.dataset.preset));
+});
+
+// Viz modes
+document.querySelectorAll('[data-viz]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-viz]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    vizMode = btn.dataset.viz;
+  });
+});
+
+// Tools
+document.querySelectorAll('[data-tool]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTool = btn.dataset.tool;
+    if (activeTool !== 'line') {
+      crossLineStart = null;
+      crossLineEnd = null;
+      document.getElementById('crossSectionOverlay').style.display = 'none';
+    }
+  });
+});
+
+// Pause
+document.getElementById('btnPause').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('btnPause').textContent = paused ? 'Play' : 'Pause';
+  document.getElementById('btnPause').classList.toggle('active', paused);
+});
+
+// Reset
+document.getElementById('btnReset').addEventListener('click', () => {
+  simTime = 0;
+  measurePoint = null;
+  crossLineStart = null;
+  crossLineEnd = null;
+  document.getElementById('crossSectionOverlay').style.display = 'none';
+  updateMeasurement();
+});
+
+// Speed
+document.getElementById('speedSlider').addEventListener('input', (e) => {
+  speed = parseFloat(e.target.value);
+  document.getElementById('speedVal').textContent = speed.toFixed(1) + 'x';
+});
+
+// Damping
+document.getElementById('dampingSlider').addEventListener('input', (e) => {
+  damping = parseFloat(e.target.value);
+  document.getElementById('dampingVal').textContent = damping.toFixed(3);
+});
+
+// Wave speed
+document.getElementById('waveSpeedSlider').addEventListener('input', (e) => {
+  waveSpeed = parseFloat(e.target.value);
+  document.getElementById('waveSpeedVal').textContent = waveSpeed.toFixed(0);
+  updatePhysicsPanel();
+});
+
+// Nodal lines toggle
+document.getElementById('toggleNodelines').addEventListener('click', (e) => {
+  showNodelines = !showNodelines;
+  e.currentTarget.classList.toggle('on', showNodelines);
+});
+
+// Interference coloring toggle
+document.getElementById('toggleColor').addEventListener('click', (e) => {
+  colorMode = !colorMode;
+  e.currentTarget.classList.toggle('on', colorMode);
+});
+
+// Mic
+document.getElementById('btnMic').addEventListener('click', () => {
+  if (micActive) stopMic(); else startMic();
+});
+document.getElementById('micGain').addEventListener('input', (e) => {
+  document.getElementById('micGainVal').textContent = parseFloat(e.target.value).toFixed(1);
+});
+
+// Export PNG
+document.getElementById('btnExportPNG').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'wave_interference_' + Date.now() + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// Export JSON
+document.getElementById('btnExportJSON').addEventListener('click', () => {
+  const config = {
+    sources: sources.map(s => ({
+      x: s.x, y: s.y,
+      freq: s.freq, amp: s.amp, phaseDeg: s.phaseDeg,
+      enabled: s.enabled
+    })),
+    vizMode, damping, waveSpeed, speed, showNodelines,
+    grid: GRID, timestamp: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.download = 'wave_config_' + Date.now() + '.json';
+  link.href = URL.createObjectURL(blob);
+  link.click();
+  URL.revokeObjectURL(link.href);
+});
+
+// ============================================================
+// MAIN LOOP
+// ============================================================
+
+function animate(timestamp) {
+  if (!lastFrameTime) lastFrameTime = timestamp;
+  const dt = (timestamp - lastFrameTime) / 1000;
+  lastFrameTime = timestamp;
+
+  // FPS
+  fpsCounter++;
+  fpsTime += dt;
+  if (fpsTime >= 0.5) {
+    fps = Math.round(fpsCounter / fpsTime);
+    fpsCounter = 0;
+    fpsTime = 0;
+    document.getElementById('infoFPS').textContent = fps;
+  }
+
+  if (!paused) {
+    simTime += dt * speed;
+  }
+
+  document.getElementById('infoTime').textContent = simTime.toFixed(1) + 's';
+  document.getElementById('infoGrid').textContent = GRID + 'x' + GRID;
+
+  // Mic → source mapping
+  if (micActive) processMic();
+
+  // Compute
+  computeWaves();
+
+  // Render
+  switch (vizMode) {
+    case 'intensity': renderIntensity(); break;
+    case 'height': renderHeight(); break;
+    case 'phase': renderPhase(); break;
+    case 'energy': renderEnergy(); break;
+  }
+  if (colorMode) applyInterferenceColor();
+
+  ctx.putImageData(imageData, 0, 0);
+  drawSources();
+
+  // Update measurement (live)
+  if (measurePoint) updateMeasurement();
+  if (crossLineStart && crossLineEnd) drawCrossSection();
+
+  requestAnimationFrame(animate);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+
+loadPreset('double');
+requestAnimationFrame(animate);
+
+</script>
+</body>
+</html>

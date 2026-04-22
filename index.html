@@ -1,4 +1,92 @@
 <!DOCTYPE html>
-<html><head><title>near phi</title></head>
-<body></body>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Near Phi — Interactive Physics Tools</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --card: #12121a;
+    --border: #2a2a3a;
+    --text: #c8c8d8;
+    --dim: #6a6a7a;
+    --accent: #4a9eff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 60px 20px;
+  }
+  h1 {
+    font-size: 2.4rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  h1 span { color: var(--accent); }
+  .subtitle {
+    color: var(--dim);
+    font-size: 1.1rem;
+    margin-bottom: 48px;
+  }
+  .tools {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    max-width: 900px;
+    width: 100%;
+  }
+  a.card {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  a.card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .card h2 {
+    font-size: 1.3rem;
+    margin-bottom: 8px;
+    color: #fff;
+  }
+  .card p {
+    color: var(--dim);
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+  .tag {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    background: rgba(74,158,255,0.15);
+    color: var(--accent);
+  }
+</style>
+</head>
+<body>
+  <h1>Near <span>Phi</span></h1>
+  <p class="subtitle">Interactive physics & mathematics tools</p>
+  <div class="tools">
+    <a class="card" href="wave.html">
+      <h2>Wave Interference Simulator</h2>
+      <p>Add wave sources, tune frequencies, and watch interference patterns emerge in real time. Double-slit experiments, standing waves, phased arrays — all interactive.</p>
+      <span class="tag">waves &middot; interference &middot; optics</span>
+    </a>
+  </div>
+</body>
 </html>
