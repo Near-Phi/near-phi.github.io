@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lie Group Explorer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#060610;color:#ccc;font-family:'Segoe UI',monospace;display:flex;height:100vh;overflow:hidden}
+canvas{width:100%;height:100%;display:block;cursor:grab}
+canvas:active{cursor:grabbing}
+#canvas-wrap{flex:1;position:relative;overflow:hidden}
+#overlay-bar{position:absolute;top:12px;right:12px;display:flex;gap:6px;z-index:10}
+#overlay-bar button{
+  background:rgba(15,15,26,0.85);color:#ccc;border:1px solid #333;padding:8px 14px;
+  border-radius:5px;font-size:12px;cursor:pointer;font-family:monospace;backdrop-filter:blur(4px);
+}
+#overlay-bar button:hover{border-color:#bf6ff0;color:#fff}
+#overlay-bar button.active{background:rgba(100,40,180,0.5);border-color:#bf6ff0;color:#fff}
+#controls{width:360px;min-width:360px;background:#0a0a14;padding:12px;overflow-y:auto;border-left:1px solid #1a1a2a;display:flex;flex-direction:column;gap:8px;font-size:11px}
+h2{color:#bf6ff0;font-size:13px;text-transform:uppercase;letter-spacing:2px}
+h3{color:#a060d0;font-size:11px;border-top:1px solid #1a1a2a;padding-top:6px;margin-top:2px}
+.section{background:#08080f;border:1px solid #151520;border-radius:6px;padding:10px}
+.param{display:flex;flex-direction:column;gap:2px;margin:3px 0}
+.param label{font-size:11px;display:flex;justify-content:space-between}
+.param label span{color:#bf6ff0;font-weight:bold}
+.param input[type=range]{-webkit-appearance:none;width:100%;height:5px;background:#1a1a2a;border-radius:3px;outline:none}
+.param input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:#bf6ff0;border-radius:50%;cursor:pointer}
+select,button{background:#0f0f1a;color:#ccc;border:1px solid #252530;padding:5px 8px;border-radius:4px;font-size:11px;cursor:pointer;width:100%}
+button:hover{background:#1a1a28;border-color:#bf6ff0}
+.btn-row{display:flex;gap:5px}
+.btn-row button{flex:1}
+.group-btn{padding:7px;font-size:11px;text-align:left;display:flex;justify-content:space-between}
+.group-btn.active{background:#1a1030;border-color:#bf6ff0;color:#bf6ff0}
+.group-btn .dim{color:#666;font-size:10px}
+#info{font-size:10px;color:#888;line-height:1.5;background:#050508;border:1px solid #111;border-radius:4px;padding:8px;max-height:200px;overflow-y:auto}
+#info h4{color:#bf6ff0;font-size:11px;margin-bottom:4px}
+#info .val{color:#bf6ff0}
+#stats{font-size:10px;color:#555;line-height:1.6;margin-top:auto}
+#stats span{color:#bf6ff0}
+.family-header{color:#666;font-size:9px;text-transform:uppercase;letter-spacing:1px;margin:4px 0 2px}
+.chk{display:flex;align-items:center;gap:6px;font-size:11px;margin:2px 0}
+.chk input{accent-color:#bf6ff0}
+</style>
+</head>
+<body>
+<div id="canvas-wrap">
+  <canvas id="c"></canvas>
+  <div id="overlay-bar">
+    <button id="ob_points" class="active" onclick="setViewMode('points')">Root System</button>
+    <button id="ob_interference" onclick="setViewMode('interference')">Interference</button>
+  </div>
+</div>
+<div id="controls">
+  <h2>Lie Group Explorer</h2>
+
+  <div class="section">
+    <h3>Classical Series</h3>
+    <div class="family-header">A_n = SU(n+1)</div>
+    <div class="btn-row">
+      <button class="group-btn" onclick="selectGroup('A',1)">A1<span class="dim">SU(2)</span></button>
+      <button class="group-btn" onclick="selectGroup('A',2)">A2<span class="dim">SU(3)</span></button>
+      <button class="group-btn" onclick="selectGroup('A',3)">A3<span class="dim">SU(4)</span></button>
+      <button class="group-btn" onclick="selectGroup('A',4)">A4<span class="dim">SU(5)</span></button>
+    </div>
+    <div class="btn-row">
+      <button class="group-btn" onclick="selectGroup('A',5)">A5<span class="dim">SU(6)</span></button>
+      <button class="group-btn" onclick="selectGroup('A',6)">A6<span class="dim">SU(7)</span></button>
+      <button class="group-btn" onclick="selectGroup('A',7)">A7<span class="dim">SU(8)</span></button>
+    </div>
+    <div class="family-header">B_n = SO(2n+1)</div>
+    <div class="btn-row">
+      <button class="group-btn" onclick="selectGroup('B',2)">B2<span class="dim">SO(5)</span></button>
+      <button class="group-btn" onclick="selectGroup('B',3)">B3<span class="dim">SO(7)</span></button>
+      <button class="group-btn" onclick="selectGroup('B',4)">B4<span class="dim">SO(9)</span></button>
+    </div>
+    <div class="family-header">C_n = Sp(2n)</div>
+    <div class="btn-row">
+      <button class="group-btn" onclick="selectGroup('C',2)">C2<span class="dim">Sp(4)</span></button>
+      <button class="group-btn" onclick="selectGroup('C',3)">C3<span class="dim">Sp(6)</span></button>
+      <button class="group-btn" onclick="selectGroup('C',4)">C4<span class="dim">Sp(8)</span></button>
+    </div>
+    <div class="family-header">D_n = SO(2n)</div>
+    <div class="btn-row">
+      <button class="group-btn" onclick="selectGroup('D',3)">D3<span class="dim">SO(6)</span></button>
+      <button class="group-btn" onclick="selectGroup('D',4)">D4<span class="dim">SO(8)</span></button>
+      <button class="group-btn" onclick="selectGroup('D',5)">D5<span class="dim">SO(10)</span></button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Exceptional Groups</h3>
+    <div class="btn-row">
+      <button class="group-btn" onclick="selectGroup('G',2)">G2<span class="dim">14d</span></button>
+      <button class="group-btn" onclick="selectGroup('F',4)">F4<span class="dim">52d</span></button>
+    </div>
+    <div class="btn-row">
+      <button class="group-btn" onclick="selectGroup('E',6)">E6<span class="dim">78d</span></button>
+      <button class="group-btn" onclick="selectGroup('E',7)">E7<span class="dim">133d</span></button>
+      <button class="group-btn" onclick="selectGroup('E',8)">E8<span class="dim">248d</span></button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>View Mode</h3>
+    <select id="viewMode" onchange="onViewModeChange()">
+      <option value="points">Root System (Points + Edges)</option>
+      <option value="interference">Interference Field</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <h3>Projection</h3>
+    <select id="projection" onchange="rebuildProjection()">
+      <option value="petrie">Petrie Polygon</option>
+      <option value="coxeter">Coxeter Plane</option>
+      <option value="random">Random 2D Plane</option>
+      <option value="pca">PCA (best spread)</option>
+    </select>
+    <div class="param">
+      <label>Auto-Spin <span id="v_rotSpeed">0.15</span></label>
+      <input type="range" id="rotSpeed" min="0" max="2" step="0.01" value="0.15">
+    </div>
+    <div class="param">
+      <label>Spin Plane <span id="v_rotPlane">0</span></label>
+      <input type="range" id="rotPlane" min="0" max="20" step="1" value="0">
+    </div>
+    <div class="param">
+      <label>Point Size <span id="v_pointSize">3.0</span></label>
+      <input type="range" id="pointSize" min="0.5" max="10" step="0.5" value="3">
+    </div>
+  </div>
+
+  <div class="section" id="pointsControls">
+    <h3>Display</h3>
+    <div class="chk"><input type="checkbox" id="showEdges" checked><label for="showEdges">Edges</label></div>
+    <div class="chk"><input type="checkbox" id="showDynkin" checked><label for="showDynkin">Dynkin Diagram</label></div>
+    <div class="chk"><input type="checkbox" id="showLabels"><label for="showLabels">Root Labels</label></div>
+    <div class="chk"><input type="checkbox" id="colorByLength" checked><label for="colorByLength">Color by Root Length</label></div>
+    <div class="chk"><input type="checkbox" id="showSimple" checked><label for="showSimple">Highlight Simple Roots</label></div>
+    <div class="param">
+      <label>Edge Threshold <span id="v_edgeThresh">0.55</span></label>
+      <input type="range" id="edgeThresh" min="0.1" max="1.5" step="0.05" value="0.55">
+    </div>
+    <div class="param">
+      <label>Edge Opacity <span id="v_edgeOpacity">0.08</span></label>
+      <input type="range" id="edgeOpacity" min="0.01" max="0.5" step="0.01" value="0.08">
+    </div>
+  </div>
+
+  <div class="section" id="interferenceControls" style="display:none">
+    <h3>Interference</h3>
+    <div class="param">
+      <label>Frequency <span id="v_waveFreq">0.08</span></label>
+      <input type="range" id="waveFreq" min="0.01" max="0.5" step="0.005" value="0.08">
+    </div>
+    <div class="param">
+      <label>Amplitude <span id="v_waveAmp">1.00</span></label>
+      <input type="range" id="waveAmp" min="0.1" max="3" step="0.05" value="1">
+    </div>
+    <div class="param">
+      <label>Phase Speed <span id="v_phaseSpeed">0.02</span></label>
+      <input type="range" id="phaseSpeed" min="0" max="0.2" step="0.005" value="0.02">
+    </div>
+    <div class="param">
+      <label>Resolution (lower=faster) <span id="v_fieldRes">6</span></label>
+      <input type="range" id="fieldRes" min="2" max="10" step="1" value="6">
+    </div>
+    <div class="param">
+      <label>Color Cycle <span id="v_colorCycle">1.00</span></label>
+      <input type="range" id="colorCycle" min="0.1" max="5" step="0.1" value="1">
+    </div>
+    <div class="param">
+      <label>Decay <span id="v_waveDecay">0.005</span></label>
+      <input type="range" id="waveDecay" min="0" max="0.05" step="0.001" value="0.005">
+    </div>
+    <div class="chk"><input type="checkbox" id="showRootsOverlay" checked><label for="showRootsOverlay">Show roots overlay</label></div>
+  </div>
+
+  <div class="section">
+    <div class="btn-row">
+      <button onclick="randomProjection()">Random View</button>
+      <button onclick="resetView()">Reset View</button>
+    </div>
+    <p style="font-size:9px;color:#555;margin-top:6px">Drag to rotate. Right-drag to pan. Scroll to zoom (no limit). Shift+drag for alternate rotation planes.</p>
+  </div>
+
+  <div class="section" id="info">
+    <h4>Select a group to begin</h4>
+  </div>
+
+  <div id="stats">
+    Roots: <span id="rootCount">0</span> |
+    Dim: <span id="groupDim">0</span> |
+    Rank: <span id="groupRank">0</span> |
+    Zoom: <span id="zoomLevel">1.0</span>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let roots = [];
+let simpleRoots = [];
+let projectedRoots = [];
+let projMatrix = [];
+let currentGroup = null;
+let currentRank = 0;
+let dim = 0; // dimension of root vectors
+
+// ---- Smooth rotation state ----
+// We store the full rotation as an NxN matrix (identity initially).
+// Mouse drag applies incremental Givens rotations to it.
+let rotMatrix = null; // NxN array of arrays
+let angularVelX = 0, angularVelY = 0; // momentum
+let autoRotAngle = 0;
+let mouseDown = false, mouseButton = 0, lastMouse = {x:0,y:0};
+let panX = 0, panY = 0;
+let zoom = 300; // pixels per unit root-length. No cap.
+let phaseTime = 0;
+
+function resize(){
+  const wrap = document.getElementById('canvas-wrap');
+  canvas.width = wrap.clientWidth * devicePixelRatio;
+  canvas.height = wrap.clientHeight * devicePixelRatio;
+  canvas.style.width = wrap.clientWidth + 'px';
+  canvas.style.height = wrap.clientHeight + 'px';
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+function param(id){return parseFloat(document.getElementById(id).value)}
+function paramBool(id){return document.getElementById(id).checked}
+
+document.querySelectorAll('.param input[type=range]').forEach(el=>{
+  el.addEventListener('input',()=>{
+    const s=document.getElementById('v_'+el.id);
+    if(s) s.textContent=parseFloat(el.value).toFixed(el.step.includes('.')?el.step.split('.')[1].length:0);
+  });
+});
+
+function onViewModeChange(){
+  const mode = document.getElementById('viewMode').value;
+  document.getElementById('pointsControls').style.display = mode==='points'?'':'none';
+  document.getElementById('interferenceControls').style.display = mode==='interference'?'':'none';
+  document.getElementById('ob_points').classList.toggle('active', mode==='points');
+  document.getElementById('ob_interference').classList.toggle('active', mode==='interference');
+}
+function setViewMode(mode){
+  document.getElementById('viewMode').value=mode;
+  onViewModeChange();
+}
+
+// ============ IDENTITY MATRIX ============
+function identityMatrix(n){
+  const m = [];
+  for(let i=0;i<n;i++){
+    m[i]=[];
+    for(let j=0;j<n;j++) m[i][j]=(i===j)?1:0;
+  }
+  return m;
+}
+
+// Apply Givens rotation to matrix M (multiply on right by G(a,b,theta))
+// This rotates columns a and b
+function applyGivensToMatrix(M, n, a, b, theta){
+  const c = Math.cos(theta), s = Math.sin(theta);
+  for(let i=0;i<n;i++){
+    const ma = M[i][a], mb = M[i][b];
+    M[i][a] = ma*c + mb*s;
+    M[i][b] = -ma*s + mb*c;
+  }
+}
+
+// Multiply matrix M by vector v
+function matVec(M, v){
+  const n = M.length;
+  const out = new Array(n);
+  for(let i=0;i<n;i++){
+    let s=0;
+    for(let j=0;j<n;j++) s += M[i][j]*v[j];
+    out[i]=s;
+  }
+  return out;
+}
+
+function initRotMatrix(n){
+  dim = n;
+  rotMatrix = identityMatrix(n);
+}
+
+// ============ ROOT SYSTEM GENERATION ============
+
+function generateRoots(type, n){
+  const rs = [];
+  if(type==='A'){
+    for(let i=0;i<=n;i++){
+      for(let j=0;j<=n;j++){
+        if(i===j) continue;
+        const r = Array(n+1).fill(0);
+        r[i]=1; r[j]=-1;
+        rs.push(r);
+      }
+    }
+  } else if(type==='B'){
+    for(let i=0;i<n;i++){
+      for(let j=i+1;j<n;j++){
+        for(const s1 of [1,-1]){
+          for(const s2 of [1,-1]){
+            const r=Array(n).fill(0); r[i]=s1; r[j]=s2; rs.push(r);
+          }
+        }
+      }
+      const r1=Array(n).fill(0); r1[i]=1; rs.push(r1);
+      const r2=Array(n).fill(0); r2[i]=-1; rs.push(r2);
+    }
+  } else if(type==='C'){
+    for(let i=0;i<n;i++){
+      for(let j=i+1;j<n;j++){
+        for(const s1 of [1,-1]){
+          for(const s2 of [1,-1]){
+            const r=Array(n).fill(0); r[i]=s1; r[j]=s2; rs.push(r);
+          }
+        }
+      }
+      const r1=Array(n).fill(0); r1[i]=2; rs.push(r1);
+      const r2=Array(n).fill(0); r2[i]=-2; rs.push(r2);
+    }
+  } else if(type==='D'){
+    for(let i=0;i<n;i++){
+      for(let j=i+1;j<n;j++){
+        for(const s1 of [1,-1]){
+          for(const s2 of [1,-1]){
+            const r=Array(n).fill(0); r[i]=s1; r[j]=s2; rs.push(r);
+          }
+        }
+      }
+    }
+  } else if(type==='G' && n===2){
+    const g2 = [
+      [1,-1,0],[-1,1,0],[1,0,-1],[-1,0,1],[0,1,-1],[0,-1,1],
+      [2,-1,-1],[-2,1,1],[1,-2,1],[-1,2,-1],[1,1,-2],[-1,-1,2]
+    ];
+    for(const r of g2) rs.push(r);
+  } else if(type==='F' && n===4){
+    for(let i=0;i<4;i++){
+      for(let j=i+1;j<4;j++){
+        for(const s1 of [1,-1]){
+          for(const s2 of [1,-1]){
+            const r=[0,0,0,0]; r[i]=s1; r[j]=s2; rs.push(r);
+          }
+        }
+      }
+      const r1=[0,0,0,0]; r1[i]=1; rs.push(r1);
+      const r2=[0,0,0,0]; r2[i]=-1; rs.push(r2);
+    }
+    for(let a=-1;a<=1;a+=2)
+      for(let b=-1;b<=1;b+=2)
+        for(let c=-1;c<=1;c+=2)
+          for(let d=-1;d<=1;d+=2)
+            rs.push([a/2,b/2,c/2,d/2]);
+  } else if(type==='E'){
+    const e8roots = buildE8();
+    if(n===8){
+      for(const r of e8roots) rs.push(r);
+    } else if(n===7){
+      for(const r of e8roots){
+        if(Math.abs(r[0]+r[7])<0.01) rs.push(r);
+      }
+      if(rs.length<100){
+        rs.length=0;
+        for(const r of e8roots){
+          if(Math.abs(r[0]+r[1])<0.01) rs.push(r);
+        }
+      }
+    } else if(n===6){
+      for(const r of e8roots){
+        const d1=r[0]+r[1], d2=r[6]+r[7];
+        if(Math.abs(d1)<0.01 && Math.abs(d2)<0.01) rs.push(r);
+      }
+      if(rs.length<60){
+        rs.length=0;
+        for(const r of e8roots){
+          if(Math.abs(r[0]+r[1])<0.01 && Math.abs(r[0]+r[7])<0.01) rs.push(r);
+        }
+      }
+      if(rs.length<60){
+        rs.length=0;
+        buildE6Direct(rs);
+      }
+    }
+  }
+  return rs;
+}
+
+function buildE8(){
+  const roots=[];
+  for(let i=0;i<8;i++){
+    for(let j=i+1;j<8;j++){
+      for(const s1 of [1,-1]){
+        for(const s2 of [1,-1]){
+          const r=[0,0,0,0,0,0,0,0];
+          r[i]=s1; r[j]=s2;
+          roots.push(r);
+        }
+      }
+    }
+  }
+  for(let mask=0;mask<256;mask++){
+    let negCount=0;
+    const r=[];
+    for(let i=0;i<8;i++){
+      if(mask&(1<<i)){r.push(-0.5);negCount++;}
+      else r.push(0.5);
+    }
+    if(negCount%2===0) roots.push(r);
+  }
+  return roots;
+}
+
+function buildE6Direct(rs){
+  for(let i=0;i<5;i++){
+    for(let j=i+1;j<5;j++){
+      for(const s1 of [1,-1]){
+        for(const s2 of [1,-1]){
+          const r=[0,0,0,0,0,0]; r[i]=s1;r[j]=s2; rs.push(r);
+        }
+      }
+    }
+  }
+  const sq32=Math.sqrt(3)/2;
+  for(let mask=0;mask<32;mask++){
+    let neg=0; const r=[];
+    for(let i=0;i<5;i++){
+      if(mask&(1<<i)){r.push(-0.5);neg++;}else r.push(0.5);
+    }
+    if(neg%2===0){
+      r.push(sq32); rs.push([...r]);
+      r[5]=-sq32; rs.push(r);
+    }
+  }
+}
+
+function innerProduct(a,b){
+  let s=0; const n=Math.min(a.length,b.length);
+  for(let i=0;i<n;i++) s+=a[i]*b[i];
+  return s;
+}
+function rootLength(r){return Math.sqrt(innerProduct(r,r))}
+
+function getSimpleRoots(allRoots, rank){
+  const pos = allRoots.filter(r=>{
+    for(let i=0;i<r.length;i++){
+      if(Math.abs(r[i])>0.001) return r[i]>0;
+    }
+    return false;
+  });
+  const withHeight = pos.map(r=>({r, h: r.reduce((a,b)=>a+b,0)}));
+  withHeight.sort((a,b)=>a.h-b.h);
+  const simple=[];
+  for(const {r} of withHeight){
+    if(simple.length>=rank) break;
+    if(simple.length>0){
+      let bad=false;
+      for(const s of simple){
+        const dot=innerProduct(r,s);
+        const nr=Math.sqrt(innerProduct(r,r));
+        const ns=Math.sqrt(innerProduct(s,s));
+        if(Math.abs(dot/(nr*ns+1e-9))>0.95){bad=true;break;}
+      }
+      if(bad) continue;
+    }
+    simple.push(r);
+  }
+  return simple;
+}
+
+// ============ PROJECTION ============
+
+function buildProjectionMatrix(roots, rank){
+  const mode = document.getElementById('projection').value;
+  const d = roots[0]?.length || rank;
+  let p1=Array(d).fill(0), p2=Array(d).fill(0);
+
+  if(mode==='petrie'){
+    const h=coxeterNumber(currentGroup,currentRank);
+    for(let i=0;i<d;i++){p1[i]=Math.cos(2*Math.PI*i/h);p2[i]=Math.sin(2*Math.PI*i/h);}
+  } else if(mode==='coxeter'){
+    const h=coxeterNumber(currentGroup,currentRank);
+    for(let i=0;i<d;i++){p1[i]=Math.cos(2*Math.PI*(2*i+1)/(2*h));p2[i]=Math.sin(2*Math.PI*(2*i+1)/(2*h));}
+  } else if(mode==='random'){
+    p1=Array.from({length:d},()=>Math.random()-0.5);
+    p2=Array.from({length:d},()=>Math.random()-0.5);
+  } else if(mode==='pca'){
+    const cov=Array.from({length:d},()=>Array(d).fill(0));
+    for(const r of roots) for(let i=0;i<d;i++) for(let j=0;j<d;j++) cov[i][j]+=r[i]*r[j]/roots.length;
+    p1=Array.from({length:d},()=>Math.random()-0.5);
+    for(let it=0;it<50;it++){
+      const next=Array(d).fill(0);
+      for(let i=0;i<d;i++) for(let j=0;j<d;j++) next[i]+=cov[i][j]*p1[j];
+      const n=Math.sqrt(innerProduct(next,next));
+      p1=next.map(x=>x/n);
+    }
+    p2=Array.from({length:d},()=>Math.random()-0.5);
+    let dot=innerProduct(p2,p1); p2=p2.map((x,i)=>x-dot*p1[i]);
+    for(let it=0;it<50;it++){
+      const next=Array(d).fill(0);
+      for(let i=0;i<d;i++) for(let j=0;j<d;j++) next[i]+=cov[i][j]*p2[j];
+      dot=innerProduct(next,p1);
+      const orth=next.map((x,i)=>x-dot*p1[i]);
+      const n=Math.sqrt(innerProduct(orth,orth));
+      p2=orth.map(x=>x/n);
+    }
+  }
+  // Gram-Schmidt normalize
+  let n1=Math.sqrt(innerProduct(p1,p1)); p1=p1.map(x=>x/n1);
+  let dot=innerProduct(p2,p1); p2=p2.map((x,i)=>x-dot*p1[i]);
+  let n2=Math.sqrt(innerProduct(p2,p2)); p2=p2.map(x=>x/n2);
+  return [p1,p2];
+}
+
+function coxeterNumber(type,n){
+  if(type==='A') return n+1;
+  if(type==='B'||type==='C') return 2*n;
+  if(type==='D') return 2*(n-1);
+  if(type==='E'&&n===6) return 12;
+  if(type==='E'&&n===7) return 18;
+  if(type==='E'&&n===8) return 30;
+  if(type==='F') return 12;
+  if(type==='G') return 6;
+  return n+1;
+}
+
+// Project a single root: apply rotation matrix, then project to 2D
+function projectRoot(root){
+  const rotated = matVec(rotMatrix, root);
+  return { x: innerProduct(rotated, projMatrix[0]), y: innerProduct(rotated, projMatrix[1]) };
+}
+
+// ============ GROUP INFO ============
+const groupInfo = {
+  A:(n)=>({name:`A${n} = SU(${n+1})`,dim:n*(n+2),roots:n*(n+1),
+    desc:`Special unitary group. ${n+1}x${n+1} unitary matrices, det=1.`,
+    physics:n===1?'SU(2): Weak force, spin, isospin.':n===2?'SU(3): Strong force / QCD. 8 gluons.':n===4?'SU(5): Georgi-Glashow GUT.':
+    `SU(${n+1}): Extended gauge theories.`,
+    math:`Roots: e_i-e_j in R^${n+1}. Weyl=S_${n+1}. h=${n+1}.`}),
+  B:(n)=>({name:`B${n} = SO(${2*n+1})`,dim:n*(2*n+1),roots:2*n*n,
+    desc:`Rotations in ${2*n+1}D. Two root lengths.`,
+    physics:`SO(${2*n+1}): Odd orthogonal group.`,
+    math:`Roots: +/-e_i+/-e_j, +/-e_i. h=${2*n}.`}),
+  C:(n)=>({name:`C${n} = Sp(${2*n})`,dim:n*(2*n+1),roots:2*n*n,
+    desc:`Symplectic group on R^${2*n}. Hamiltonian mechanics.`,
+    physics:'Phase space symmetry, SUSY gauge theories.',
+    math:`Roots: +/-e_i+/-e_j (short), +/-2e_i (long). Dual to B. h=${2*n}.`}),
+  D:(n)=>({name:`D${n} = SO(${2*n})`,dim:n*(2*n-1),roots:2*n*(n-1),
+    desc:`Even-dimensional rotations.`+(n===4?' Triality!':''),
+    physics:n===5?'SO(10): Grand unification, right-handed neutrinos.':n===4?'SO(8): Triality, string theory.':
+    `SO(${2*n}): Even orthogonal group.`,
+    math:`Roots: +/-e_i+/-e_j. Forked Dynkin. h=${2*(n-1)}.`}),
+  G:()=>({name:'G2',dim:14,roots:12,
+    desc:'Smallest exceptional. Octonion automorphisms.',
+    physics:'G2 holonomy in M-theory compactifications. N=1 SUSY in 4D.',
+    math:'12 roots, hexagonal, ratio sqrt(3). h=6.'}),
+  F:()=>({name:'F4',dim:52,roots:48,
+    desc:'Exceptional Jordan algebra automorphisms.',
+    physics:'Unification attempts. Contains SO(9). Related to 24-cell.',
+    math:'48 roots in R4: long+short+half-integer. h=12.'}),
+  E:(n)=>({name:['','','','','','','E6','E7','E8'][n],dim:[0,0,0,0,0,0,78,133,248][n],roots:[0,0,0,0,0,0,72,126,240][n],
+    desc:n===8?'Largest exceptional. 248-dimensional. Most symmetric structure in mathematics.':
+         n===7?'133-dimensional. Smallest rep is 56D. N=8 supergravity.':
+         'String compactification. 27-dimensional fundamental rep.',
+    physics:n===8?'E8xE8 heterotic string. Lisi\'s "theory of everything." Densest 8D packing (Viazovska).':
+            n===7?'N=8 supergravity. Black hole charges in 56-rep.':
+            'E6 GUT. Calabi-Yau compactification of heterotic string.',
+    math:n===8?'240 roots. h=30. Weyl group: 696,729,600 elements.':
+         n===7?'126 roots. h=18. Weyl: 2,903,040.':
+         '72 roots. h=12. Weyl: 51,840.'})
+};
+
+// ============ DYNKIN DIAGRAM ============
+function drawDynkin(type,n,x0,y0){
+  const sp=28,r=6;
+  ctx.save();
+  const nodes=[];
+  if(type==='E'){
+    nodes.push({x:x0,y:y0,id:0});
+    for(let i=2;i<n;i++) nodes.push({x:x0+(i-1)*sp,y:y0,id:i});
+    nodes.push({x:x0+sp,y:y0-sp,id:1});
+  } else if(type==='D'){
+    for(let i=0;i<n-2;i++) nodes.push({x:x0+i*sp,y:y0,id:i});
+    nodes.push({x:x0+(n-2)*sp,y:y0-sp*0.5,id:n-2});
+    nodes.push({x:x0+(n-2)*sp,y:y0+sp*0.5,id:n-1});
+  } else {
+    for(let i=0;i<n;i++) nodes.push({x:x0+i*sp,y:y0,id:i});
+  }
+  ctx.strokeStyle='rgba(180,140,220,0.6)';ctx.lineWidth=2;
+  if(type==='A'||type==='B'||type==='C'||type==='F'){
+    for(let i=0;i<n-1;i++){ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[i+1].x,nodes[i+1].y);ctx.stroke();}
+    if(type==='B'&&n>=2){const i=n-2;ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y-3);ctx.lineTo(nodes[i+1].x,nodes[i+1].y-3);ctx.stroke();}
+    if(type==='C'&&n>=2){const i=n-2;ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y-3);ctx.lineTo(nodes[i+1].x,nodes[i+1].y-3);ctx.stroke();}
+    if(type==='F'){ctx.beginPath();ctx.moveTo(nodes[1].x,nodes[1].y-3);ctx.lineTo(nodes[2].x,nodes[2].y-3);ctx.stroke();}
+  }
+  if(type==='G'){
+    ctx.beginPath();ctx.moveTo(nodes[0].x,nodes[0].y);ctx.lineTo(nodes[1].x,nodes[1].y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(nodes[0].x,nodes[0].y-3);ctx.lineTo(nodes[1].x,nodes[1].y-3);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(nodes[0].x,nodes[0].y+3);ctx.lineTo(nodes[1].x,nodes[1].y+3);ctx.stroke();
+  }
+  if(type==='D'){
+    for(let i=0;i<n-3;i++){ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[i+1].x,nodes[i+1].y);ctx.stroke();}
+    ctx.beginPath();ctx.moveTo(nodes[n-3].x,nodes[n-3].y);ctx.lineTo(nodes[n-2].x,nodes[n-2].y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(nodes[n-3].x,nodes[n-3].y);ctx.lineTo(nodes[n-1].x,nodes[n-1].y);ctx.stroke();
+  }
+  if(type==='E'){
+    ctx.beginPath();ctx.moveTo(nodes[0].x,nodes[0].y);ctx.lineTo(nodes[1].x,nodes[1].y);ctx.stroke();
+    for(let i=1;i<n-2;i++){ctx.beginPath();ctx.moveTo(nodes[i].x,nodes[i].y);ctx.lineTo(nodes[i+1].x,nodes[i+1].y);ctx.stroke();}
+    const n1=nodes[n-1],n2=nodes[1];
+    ctx.beginPath();ctx.moveTo(n1.x,n1.y);ctx.lineTo(n2.x,n2.y);ctx.stroke();
+  }
+  for(const nd of nodes){
+    ctx.beginPath();ctx.arc(nd.x,nd.y,r,0,Math.PI*2);
+    ctx.fillStyle='rgba(180,140,220,0.9)';ctx.fill();
+    ctx.strokeStyle='rgba(220,180,255,0.8)';ctx.lineWidth=1.5;ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ============ MAIN ============
+function selectGroup(type,n){
+  currentGroup=type; currentRank=n;
+  document.querySelectorAll('.group-btn').forEach(b=>{
+    b.classList.remove('active');
+    const sub='\u2080\u2081\u2082\u2083\u2084\u2085\u2086\u2087\u2088'[n];
+    if(b.textContent.startsWith(type+n)||b.textContent.startsWith(type+sub)) b.classList.add('active');
+  });
+  roots=generateRoots(type,n);
+  simpleRoots=getSimpleRoots(roots,n);
+  dim=roots[0]?.length||n;
+  initRotMatrix(dim);
+  angularVelX=0; angularVelY=0;
+  rebuildProjection();
+  const info=groupInfo[type](n);
+  document.getElementById('info').innerHTML=`
+    <h4>${info.name}</h4><p>${info.desc}</p>
+    <p><strong>Dim:</strong> <span class="val">${info.dim}</span> | <strong>Roots:</strong> <span class="val">${roots.length}</span> | <strong>Rank:</strong> <span class="val">${n}</span></p>
+    <p>${info.math}</p>
+    <p style="color:#6ab0f3"><strong>Physics:</strong> ${info.physics}</p>`;
+  document.getElementById('rootCount').textContent=roots.length;
+  document.getElementById('groupDim').textContent=info.dim;
+  document.getElementById('groupRank').textContent=n;
+}
+
+function rebuildProjection(){
+  if(!roots.length) return;
+  projMatrix=buildProjectionMatrix(roots,currentRank);
+}
+function randomProjection(){
+  document.getElementById('projection').value='random';
+  rebuildProjection();
+}
+function resetView(){
+  panX=0;panY=0;zoom=300;autoRotAngle=0;angularVelX=0;angularVelY=0;
+  if(dim) initRotMatrix(dim);
+  rebuildProjection();
+}
+
+// ============ HSL helper ============
+function hsl(h,s,l,a){return `hsla(${h},${s}%,${l}%,${a})`;}
+
+// ============ RENDER ============
+function draw(){
+  const w=canvas.clientWidth, h=canvas.clientHeight;
+  const cx=w/2+panX, cy=h/2+panY;
+  const speed=param('rotSpeed');
+  const viewMode=document.getElementById('viewMode').value;
+
+  // --- Apply momentum (smooth rotation) ---
+  const friction = 0.97;
+  angularVelX *= friction;
+  angularVelY *= friction;
+  // Apply residual angular velocity as Givens rotations
+  if(dim>=2 && (Math.abs(angularVelX)>0.0001 || Math.abs(angularVelY)>0.0001)){
+    // X drag -> rotate in planes involving projected axes
+    // We pick 2 independent plane pairs for X and Y mouse axes
+    // to give a "tumble" feel through the full N-d space
+    applyGivensToMatrix(rotMatrix, dim, 0, 1, angularVelX);
+    if(dim>2) applyGivensToMatrix(rotMatrix, dim, 1, 2, angularVelY);
+    if(dim>3){
+      applyGivensToMatrix(rotMatrix, dim, 0, 3, angularVelY*0.3);
+      applyGivensToMatrix(rotMatrix, dim, 2, 3, angularVelX*0.3);
+    }
+  }
+
+  // Auto-spin
+  if(speed > 0.001 && dim >= 2){
+    const rp = document.getElementById('rotPlane').value|0;
+    const a = rp%dim, b=(rp+1)%dim;
+    applyGivensToMatrix(rotMatrix, dim, a, b, speed*0.005);
+  }
+
+  // Re-orthogonalize rotation matrix periodically (prevent drift)
+  if(Math.random()<0.02) reorthogonalize();
+
+  ctx.fillStyle='#060610';
+  ctx.fillRect(0,0,w,h);
+
+  if(!roots.length){
+    ctx.fillStyle='#444';ctx.font='16px monospace';ctx.textAlign='center';
+    ctx.fillText('Select a Lie group',w/2,h/2);
+    requestAnimationFrame(draw);return;
+  }
+
+  // Project all roots
+  projectedRoots = roots.map(r=>{
+    const p=projectRoot(r);
+    return {x:cx+p.x*zoom, y:cy+p.y*zoom, root:r, px:p.x, py:p.y};
+  });
+
+  if(viewMode==='interference'){
+    drawInterference(w,h,cx,cy);
+  } else {
+    drawPoints(w,h,cx,cy);
+  }
+
+  // HUD
+  ctx.fillStyle='rgba(180,140,220,0.35)';ctx.font='13px monospace';ctx.textAlign='left';
+  if(currentGroup){
+    const gI=groupInfo[currentGroup](currentRank);
+    ctx.fillText(gI.name,20,28);
+    ctx.font='10px monospace';ctx.fillStyle='rgba(140,120,180,0.25)';
+    ctx.fillText(`${roots.length} roots | zoom ${zoom.toFixed(0)}`,20,44);
+  }
+  document.getElementById('zoomLevel').textContent=zoom.toFixed(0);
+
+  phaseTime += param('phaseSpeed');
+  requestAnimationFrame(draw);
+}
+
+function drawPoints(w,h,cx,cy){
+  const pointSize=param('pointSize');
+  const showEdges=paramBool('showEdges');
+  const showDynkin=paramBool('showDynkin');
+  const showLabels=paramBool('showLabels');
+  const colorByLen=paramBool('colorByLength');
+  const showSimple=paramBool('showSimple');
+  const edgeThresh=param('edgeThresh');
+  const edgeOpacity=param('edgeOpacity');
+
+  const lengths=roots.map(rootLength);
+  const maxLen=Math.max(...lengths);
+  const minLen=Math.min(...lengths.filter(l=>l>0.01));
+  const multi=maxLen-minLen>0.01;
+
+  // Edges
+  if(showEdges && roots.length<500){
+    ctx.lineWidth=0.5;
+    for(let i=0;i<projectedRoots.length;i++){
+      for(let j=i+1;j<projectedRoots.length;j++){
+        const dot=innerProduct(roots[i],roots[j]);
+        const cosA=dot/(lengths[i]*lengths[j]+1e-9);
+        if(Math.abs(Math.abs(cosA)-0.5)<edgeThresh*0.5){
+          const a=projectedRoots[i],b=projectedRoots[j];
+          ctx.strokeStyle=`rgba(150,120,200,${edgeOpacity})`;
+          ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+        }
+      }
+    }
+  }
+
+  // Roots
+  for(let i=0;i<projectedRoots.length;i++){
+    const p=projectedRoots[i];
+    const len=lengths[i];
+    let cr=180,cg=120,cb=255;
+    if(colorByLen&&multi){
+      const t=(len-minLen)/(maxLen-minLen+0.001);
+      if(t<0.4){cr=80;cg=220;cb=255;}else{cr=255;cg=80;cb=200;}
+    }
+    let isSR=false;
+    if(showSimple){
+      for(const sr of simpleRoots){
+        if(roots[i].every((v,k)=>Math.abs(v-sr[k])<0.001)){isSR=true;break;}
+      }
+    }
+    // Glow
+    ctx.beginPath();ctx.arc(p.x,p.y,pointSize+(isSR?4:2),0,Math.PI*2);
+    ctx.fillStyle=isSR?'rgba(255,220,50,0.3)':`rgba(${cr},${cg},${cb},0.15)`;ctx.fill();
+    // Dot
+    ctx.beginPath();ctx.arc(p.x,p.y,isSR?pointSize+1:pointSize,0,Math.PI*2);
+    ctx.fillStyle=isSR?'rgb(255,220,50)':`rgb(${cr},${cg},${cb})`;ctx.fill();
+    if(isSR){ctx.strokeStyle='rgba(255,220,50,0.6)';ctx.lineWidth=1;ctx.stroke();}
+    // Label
+    if(showLabels&&roots.length<80){
+      ctx.fillStyle='rgba(200,200,200,0.5)';ctx.font='7px monospace';ctx.textAlign='left';
+      ctx.fillText(roots[i].map(v=>v%1===0?v:v.toFixed(1)).join(','),p.x+pointSize+3,p.y+3);
+    }
+  }
+
+  // Origin
+  ctx.strokeStyle='rgba(100,100,100,0.15)';ctx.lineWidth=0.5;
+  ctx.beginPath();ctx.moveTo(cx-15,cy);ctx.lineTo(cx+15,cy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx,cy-15);ctx.lineTo(cx,cy+15);ctx.stroke();
+
+  if(showDynkin&&currentGroup) drawDynkin(currentGroup,currentRank,20,canvas.clientHeight-40);
+}
+
+// ============ INTERFERENCE FIELD ============
+// Each root emits a circular wave from its projected position.
+// The field at each pixel = sum of sin(k*dist - phase) / (1+decay*dist) from every root.
+// The result is pure interference — kaleidoscopic patterns emerge from the geometry.
+
+// Persistent offscreen canvas for interference
+let offCanvas=null, offCtx=null;
+
+function drawInterference(w,h,cx,cy){
+  const freq=param('waveFreq');
+  const amp=param('waveAmp');
+  const step=Math.max(2,Math.round(param('fieldRes')));
+  const colorCycle=param('colorCycle');
+  const decay=param('waveDecay');
+  const showOverlay=paramBool('showRootsOverlay');
+
+  const imgW=Math.ceil(w/step), imgH=Math.ceil(h/step);
+
+  // Reuse offscreen canvas
+  if(!offCanvas||offCanvas.width!==imgW||offCanvas.height!==imgH){
+    offCanvas=document.createElement('canvas');
+    offCanvas.width=imgW; offCanvas.height=imgH;
+    offCtx=offCanvas.getContext('2d');
+  }
+  const img=offCtx.createImageData(imgW,imgH);
+  const data=img.data;
+
+  const nRoots=projectedRoots.length;
+  // Subsample roots if too many — use up to 60 evenly spaced
+  const maxSources=60;
+  let sourceIndices;
+  if(nRoots>maxSources){
+    sourceIndices=[];
+    for(let i=0;i<maxSources;i++) sourceIndices.push(Math.floor(i*nRoots/maxSources));
+  } else {
+    sourceIndices=Array.from({length:nRoots},(_,i)=>i);
+  }
+  const nSrc=sourceIndices.length;
+
+  const rx=new Float32Array(nSrc);
+  const ry=new Float32Array(nSrc);
+  const rph=new Float32Array(nSrc); // phase offset per root
+  for(let j=0;j<nSrc;j++){
+    const i=sourceIndices[j];
+    rx[j]=projectedRoots[i].x/step;
+    ry[j]=projectedRoots[i].y/step;
+    rph[j]=rootLength(projectedRoots[i].root)*3;
+  }
+
+  const k=freq*Math.PI*2*step; // scale freq by step size
+  const phase=phaseTime;
+  const invSqrt=amp/Math.sqrt(nSrc);
+
+  // Precompute sin/cos table for speed
+  for(let py=0;py<imgH;py++){
+    for(let px=0;px<imgW;px++){
+      let re=0, im=0;
+      for(let j=0;j<nSrc;j++){
+        const dx=px-rx[j], dy=py-ry[j];
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        const env=1/(1+decay*dist*step);
+        const ang=k*dist-phase+rph[j];
+        re+=Math.sin(ang)*env;
+        im+=Math.cos(ang)*env;
+      }
+      re*=invSqrt;
+      im*=invSqrt;
+
+      const mag=Math.sqrt(re*re+im*im);
+      const angle=Math.atan2(im,re);
+
+      let hue=((angle/(Math.PI*2)+0.5)*360*colorCycle)%360;
+      if(hue<0) hue+=360;
+      const lit=Math.min(5+mag*45,80);
+      const sat=60+Math.min(mag*20,35);
+
+      // HSL->RGB inline
+      const C=(1-Math.abs(2*lit/100-1))*sat/100;
+      const X=C*(1-Math.abs((hue/60)%2-1));
+      const M=lit/100-C/2;
+      let R,G,B;
+      if(hue<60){R=C;G=X;B=0;}
+      else if(hue<120){R=X;G=C;B=0;}
+      else if(hue<180){R=0;G=C;B=X;}
+      else if(hue<240){R=0;G=X;B=C;}
+      else if(hue<300){R=X;G=0;B=C;}
+      else{R=C;G=0;B=X;}
+
+      const idx=(py*imgW+px)*4;
+      data[idx]=((R+M)*255)|0;
+      data[idx+1]=((G+M)*255)|0;
+      data[idx+2]=((B+M)*255)|0;
+      data[idx+3]=255;
+    }
+  }
+
+  offCtx.putImageData(img,0,0);
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(offCanvas,0,0,w,h);
+
+  if(showOverlay){
+    for(const p of projectedRoots){
+      ctx.beginPath();ctx.arc(p.x,p.y,2,0,Math.PI*2);
+      ctx.fillStyle='rgba(255,255,255,0.4)';ctx.fill();
+    }
+  }
+}
+
+// ============ REORTHOGONALIZE ============
+// Gram-Schmidt on the rotation matrix rows to prevent numerical drift
+function reorthogonalize(){
+  if(!rotMatrix) return;
+  const n=rotMatrix.length;
+  for(let i=0;i<n;i++){
+    // Subtract projections of previous rows
+    for(let j=0;j<i;j++){
+      let dot=0;
+      for(let k=0;k<n;k++) dot+=rotMatrix[i][k]*rotMatrix[j][k];
+      for(let k=0;k<n;k++) rotMatrix[i][k]-=dot*rotMatrix[j][k];
+    }
+    // Normalize
+    let norm=0;
+    for(let k=0;k<n;k++) norm+=rotMatrix[i][k]*rotMatrix[i][k];
+    norm=Math.sqrt(norm);
+    if(norm>1e-10) for(let k=0;k<n;k++) rotMatrix[i][k]/=norm;
+  }
+}
+
+// ============ MOUSE ============
+canvas.addEventListener('mousedown',e=>{
+  mouseDown=true;mouseButton=e.button;
+  lastMouse={x:e.clientX,y:e.clientY};
+  e.preventDefault();
+});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+
+canvas.addEventListener('mousemove',e=>{
+  if(!mouseDown) return;
+  const dx=e.clientX-lastMouse.x;
+  const dy=e.clientY-lastMouse.y;
+  lastMouse={x:e.clientX,y:e.clientY};
+
+  if(mouseButton===2){
+    // Right-drag = pan
+    panX+=dx; panY+=dy;
+  } else {
+    // Left-drag = rotate with momentum
+    const sensitivity=0.005;
+    angularVelX = dx*sensitivity;
+    angularVelY = dy*sensitivity;
+    // Also apply immediately for responsiveness
+    if(dim>=2){
+      applyGivensToMatrix(rotMatrix,dim,0,1,angularVelX);
+      if(dim>2) applyGivensToMatrix(rotMatrix,dim,1,2,angularVelY);
+      if(dim>3){
+        applyGivensToMatrix(rotMatrix,dim,0,3,angularVelY*0.3);
+        applyGivensToMatrix(rotMatrix,dim,2,3,angularVelX*0.3);
+      }
+      if(dim>4 && e.shiftKey){
+        applyGivensToMatrix(rotMatrix,dim,3,4,angularVelX*0.5);
+        if(dim>5) applyGivensToMatrix(rotMatrix,dim,4,5,angularVelY*0.5);
+      }
+    }
+  }
+});
+
+canvas.addEventListener('mouseup',()=>{mouseDown=false;});
+canvas.addEventListener('mouseleave',()=>{mouseDown=false;});
+
+// Scroll = zoom, no limits
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.08 : 1/1.08;
+  zoom *= factor;
+  zoom = Math.max(1, zoom); // only floor at 1px
+},{passive:false});
+
+// Touch support
+canvas.addEventListener('touchstart',e=>{
+  if(e.touches.length===1){
+    mouseDown=true;mouseButton=0;
+    lastMouse={x:e.touches[0].clientX,y:e.touches[0].clientY};
+  }
+  e.preventDefault();
+},{passive:false});
+canvas.addEventListener('touchmove',e=>{
+  if(e.touches.length===1&&mouseDown){
+    const dx=e.touches[0].clientX-lastMouse.x;
+    const dy=e.touches[0].clientY-lastMouse.y;
+    lastMouse={x:e.touches[0].clientX,y:e.touches[0].clientY};
+    const sensitivity=0.005;
+    angularVelX=dx*sensitivity; angularVelY=dy*sensitivity;
+    if(dim>=2){
+      applyGivensToMatrix(rotMatrix,dim,0,1,angularVelX);
+      if(dim>2) applyGivensToMatrix(rotMatrix,dim,1,2,angularVelY);
+    }
+  } else if(e.touches.length===2){
+    // Pinch zoom
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    if(lastPinchDist){
+      zoom*=d/lastPinchDist;
+      zoom=Math.max(1,zoom);
+    }
+    lastPinchDist=d;
+  }
+  e.preventDefault();
+},{passive:false});
+let lastPinchDist=0;
+canvas.addEventListener('touchend',()=>{mouseDown=false;lastPinchDist=0;});
+
+// Hover tooltip
+canvas.addEventListener('mousemove',e=>{
+  if(mouseDown||!projectedRoots.length) return;
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  for(const p of projectedRoots){
+    const dx=p.x-mx,dy=p.y-my;
+    if(dx*dx+dy*dy<100){
+      canvas.title=`(${p.root.map(v=>v%1===0?v:v.toFixed(2)).join(', ')}) |r|=${rootLength(p.root).toFixed(3)}`;
+      return;
+    }
+  }
+  canvas.title='';
+});
+
+// Start with E8
+selectGroup('E',8);
+draw();
+</script>
+</body>
+</html>
