@@ -484,8 +484,25 @@ function buildProjectionMatrix(roots, rank){
   let p1=Array(d).fill(0), p2=Array(d).fill(0);
 
   if(mode==='petrie'){
-    const h=coxeterNumber(currentGroup,currentRank);
-    for(let i=0;i<d;i++){p1[i]=Math.cos(2*Math.PI*i/h);p2[i]=Math.sin(2*Math.PI*i/h);}
+    // E8's exact Coxeter-plane basis (2026-07-05 fix): the previous per-axis
+    // cos(2*pi*i/h)/sin(2*pi*i/h) formula is only a textbook approximation and
+    // does NOT reproduce the true symmetric Coxeter-plane picture, because E8's
+    // root coordinates aren't expressed in the eigenbasis of a Coxeter element.
+    // These 8+8 numbers are the real and imaginary parts of the eigenvector of
+    // the bipartite Coxeter element c (product of reflections in the two
+    // Dynkin-diagram color classes) for eigenvalue exp(2*pi*i/30) (h=30 for E8),
+    // computed once offline (numpy eig, Bourbaki simple roots) and verified to
+    // reproduce the iconic 30-fold concentric-ring E8 root diagram. Exact for
+    // E8 only; other groups still use the per-axis approximation below.
+    if(currentGroup==='E' && currentRank===8 && d===8){
+      p1=[-9.822369570568688e-17,1.1493246816853964e-15,-0.11911770226439854,-0.1191177022643972,
+          -0.19273649092558673,-0.1927364909255862,-0.21763887165692933,-0.9219330548851049];
+      p2=[-0.09689906869984787,0.6698235723479292,-0.46350565994512916,0.46350565994512954,
+          -0.23693032605580555,0.23693032605580594,-6.294778390984488e-19,1.5198961437307204e-15];
+    } else {
+      const h=coxeterNumber(currentGroup,currentRank);
+      for(let i=0;i<d;i++){p1[i]=Math.cos(2*Math.PI*i/h);p2[i]=Math.sin(2*Math.PI*i/h);}
+    }
   } else if(mode==='coxeter'){
     const h=coxeterNumber(currentGroup,currentRank);
     for(let i=0;i<d;i++){p1[i]=Math.cos(2*Math.PI*(2*i+1)/(2*h));p2[i]=Math.sin(2*Math.PI*(2*i+1)/(2*h));}
