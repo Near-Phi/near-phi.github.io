@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Near Phi — Interactive Physics Tools</title>
+<title>Near Phi — Interactive Physics & Math Tools</title>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -34,8 +34,18 @@
   .subtitle {
     color: var(--dim);
     font-size: 1.1rem;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .lead {
+    color: var(--text);
+    font-size: 1rem;
+    max-width: 620px;
+    text-align: center;
+    line-height: 1.6;
     margin-bottom: 48px;
   }
+  .lead a { color: var(--accent); text-decoration: none; }
   .tools {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -76,17 +86,48 @@
     background: rgba(74,158,255,0.15);
     color: var(--accent);
   }
+  footer {
+    margin-top: 56px;
+    color: var(--dim);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
 </style>
 </head>
 <body>
   <h1>Near <span>Phi</span></h1>
-  <p class="subtitle">Interactive physics & mathematics tools</p>
+  <p class="subtitle">Interactive physics &amp; mathematics tools</p>
+  <p class="lead">Real simulations that run live in your browser. No install, no login, no paywall. Open the source, break it, rebuild it. New tools ship here as they are built. Follow along at <a href="https://x.com/Near_Phi">@Near_Phi</a>.</p>
   <div class="tools">
+    <a class="card" href="mandelbrot.html">
+      <h2>Mandelbrot Explorer</h2>
+      <p>Deep-zoom the Mandelbrot set with perturbation theory: arbitrary-precision reference orbits let you dive far past the limits of ordinary double precision.</p>
+      <span class="tag">fractals &middot; perturbation &middot; deep zoom</span>
+    </a>
+    <a class="card" href="lie-groups.html">
+      <h2>Lie Group &amp; Root System Explorer</h2>
+      <p>Rotate and inspect the 240 root vectors of E8 in 8D, plus every classical root system, live in the browser.</p>
+      <span class="tag">E8 &middot; symmetry &middot; root systems</span>
+    </a>
+    <a class="card" href="schrodinger.html">
+      <h2>Schrödinger Equation Simulator</h2>
+      <p>Watch a quantum wavefunction evolve in real time: a genuine numerical solve of the time-dependent Schrödinger equation, not a canned animation.</p>
+      <span class="tag">quantum &middot; wavefunction &middot; numerics</span>
+    </a>
+    <a class="card" href="double-slit-viz.html">
+      <h2>Double-Slit Experiment</h2>
+      <p>The experiment that broke classical intuition, interactive: fire particles through two slits and watch the interference pattern build up fringe by fringe.</p>
+      <span class="tag">quantum &middot; interference &middot; optics</span>
+    </a>
     <a class="card" href="wave.html">
       <h2>Wave Interference Simulator</h2>
-      <p>Add wave sources, tune frequencies, and watch interference patterns emerge in real time. Double-slit experiments, standing waves, phased arrays — all interactive.</p>
+      <p>Add wave sources, tune frequencies, and watch interference patterns emerge in real time. Standing waves, phased arrays, and more.</p>
       <span class="tag">waves &middot; interference &middot; optics</span>
     </a>
   </div>
+  <footer>
+    Source for every tool: <a href="https://github.com/Near-Phi">github.com/Near-Phi</a>
+  </footer>
 </body>
 </html>

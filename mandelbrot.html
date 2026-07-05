@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mandelbrot Explorer — Perturbation Theory</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a0a; color: #e0e0e0; font-family: 'Consolas', 'Monaco', monospace; overflow: hidden; height: 100vh; }
+  canvas { display: block; cursor: crosshair; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; }
+
+  #ui-overlay { position: fixed; top: 0; left: 0; z-index: 10; padding: 12px; pointer-events: none; }
+  #ui-overlay > * { pointer-events: auto; }
+
+  .panel {
+    background: rgba(10,10,10,0.88); border: 1px solid #333; border-radius: 6px;
+    padding: 12px 16px; min-width: 340px; backdrop-filter: blur(8px);
+    font-size: 12px; line-height: 1.7;
+  }
+  #controls { margin-top: 8px; }
+  .title { font-size: 16px; font-weight: bold; color: #fff; margin-bottom: 8px; letter-spacing: 1px; }
+  .row { display: flex; justify-content: space-between; align-items: center; }
+  .label { color: #888; } .value { color: #4fc3f7; font-weight: bold; }
+  .value.warn { color: #f80; }
+  .section-title { color: #aaa; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; margin: 8px 0 4px; }
+  .section-title:first-child { margin-top: 0; }
+  .ctrl-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .ctrl-row label { color: #888; min-width: 80px; }
+  .ctrl-row input[type="range"] { flex: 1; accent-color: #4fc3f7; }
+  .ctrl-row .val { color: #4fc3f7; min-width: 50px; text-align: right; font-weight: bold; }
+  .btn-row { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+  .btn {
+    background: #1a1a2e; border: 1px solid #444; color: #ccc; padding: 5px 12px;
+    border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 11px; transition: all 0.15s;
+  }
+  .btn:hover { background: #2a2a4e; border-color: #4fc3f7; color: #fff; }
+  .btn.active { background: #1a3a5e; border-color: #4fc3f7; color: #4fc3f7; }
+  select {
+    background: #1a1a2e; border: 1px solid #444; color: #ccc; padding: 4px 8px;
+    border-radius: 4px; font-family: inherit; font-size: 11px; cursor: pointer;
+  }
+
+  #help-panel {
+    position: fixed; bottom: 12px; left: 12px; z-index: 10;
+    background: rgba(10,10,10,0.88); border: 1px solid #333; border-radius: 6px;
+    padding: 10px 14px; backdrop-filter: blur(8px); font-size: 11px; line-height: 1.8;
+    color: #777; max-width: 360px;
+  }
+  #help-panel kbd {
+    background: #222; border: 1px solid #444; border-radius: 3px;
+    padding: 1px 5px; color: #aaa; font-size: 10px;
+  }
+
+  #bookmark-panel {
+    position: fixed; top: 12px; right: 12px; z-index: 10;
+    background: rgba(10,10,10,0.88); border: 1px solid #333; border-radius: 6px;
+    padding: 12px 16px; backdrop-filter: blur(8px); font-size: 12px;
+    min-width: 260px; max-height: 50vh; overflow-y: auto; display: none;
+  }
+  #bookmark-panel.visible { display: block; }
+  .bookmark-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid #222; cursor: pointer; }
+  .bookmark-item:hover { color: #4fc3f7; }
+  .bookmark-item .bk-del { color: #f44; cursor: pointer; padding: 0 4px; }
+
+  #fly-indicator {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 15;
+    color: rgba(79,195,247,0.5); font-size: 14px; pointer-events: none; display: none; text-align: center;
+  }
+  #fly-indicator.visible { display: block; }
+</style>
+</head>
+<body>
+
+<canvas id="fractal"></canvas>
+
+<div id="fly-indicator">
+  <div style="font-size:24px">+</div>FLY MODE<br>
+  <span style="font-size:10px">Space=in Shift=out WASD=pan Mouse=aim</span>
+</div>
+
+<div id="ui-overlay">
+  <div class="panel" id="info-panel">
+    <div class="title">MANDELBROT EXPLORER <span style="font-size:10px;color:#4fc3f7">Perturbation Theory</span></div>
+    <div class="row"><span class="label">Center Re:</span><span class="value" id="v-re">-0.5</span></div>
+    <div class="row"><span class="label">Center Im:</span><span class="value" id="v-im">0.0</span></div>
+    <div class="row"><span class="label">Zoom:</span><span class="value" id="v-zoom">1.0x</span></div>
+    <div class="row"><span class="label">Cursor:</span><span class="value" id="v-cursor">--</span></div>
+    <div class="row"><span class="label">Iterations:</span><span class="value" id="v-iter">256</span></div>
+    <div class="row"><span class="label">FPS:</span><span class="value" id="v-fps">--</span></div>
+    <div class="row"><span class="label">Mode:</span><span class="value" id="v-mode">Classic</span></div>
+    <div class="row"><span class="label">Ref orbit:</span><span class="value" id="v-ref">--</span></div>
+  </div>
+
+  <div class="panel" id="controls">
+    <div class="section-title">Iterations</div>
+    <div class="ctrl-row">
+      <label>Max Iter</label>
+      <input type="range" id="iter-slider" min="50" max="50000" value="256" step="1">
+      <span class="val" id="iter-val">256</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn" onclick="setIter(256)">256</button>
+      <button class="btn" onclick="setIter(1000)">1K</button>
+      <button class="btn" onclick="setIter(5000)">5K</button>
+      <button class="btn" onclick="setIter(10000)">10K</button>
+      <button class="btn" onclick="setIter(25000)">25K</button>
+      <button class="btn" onclick="setIter(50000)">50K</button>
+    </div>
+
+    <div class="section-title">Color</div>
+    <div class="btn-row">
+      <select id="color-scheme">
+        <option value="0">Smooth Rainbow</option>
+        <option value="1" selected>Ultra Fractal</option>
+        <option value="2">Electric Blue</option>
+        <option value="3">Fire</option>
+        <option value="4">Ice</option>
+        <option value="5">Psychedelic</option>
+        <option value="6">Monochrome</option>
+        <option value="7">Twilight</option>
+        <option value="8">Neon</option>
+        <option value="9">Earth</option>
+      </select>
+    </div>
+    <div class="ctrl-row">
+      <label>Color Cycle</label>
+      <input type="range" id="color-offset" min="0" max="1" step="0.002" value="0">
+      <span class="val" id="offset-val">0</span>
+    </div>
+    <div class="ctrl-row">
+      <label>Color Scale</label>
+      <input type="range" id="color-scale" min="0.1" max="10" step="0.1" value="1">
+      <span class="val" id="scale-val">1.0</span>
+    </div>
+
+    <div class="section-title">Rendering</div>
+    <div class="ctrl-row">
+      <label>Smooth</label>
+      <input type="checkbox" id="smooth-check" checked>
+      <label style="min-width:auto">Auto Iter</label>
+      <input type="checkbox" id="auto-iter-check" checked>
+    </div>
+
+    <div class="section-title">Flight</div>
+    <div class="ctrl-row">
+      <label>Fly Speed</label>
+      <input type="range" id="fly-speed" min="0.5" max="8" step="0.1" value="2.5">
+      <span class="val" id="fly-speed-val">2.5</span>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="fly-btn" onclick="toggleFlyMode()">Fly Mode (F)</button>
+    </div>
+
+    <div class="section-title">Actions</div>
+    <div class="btn-row">
+      <button class="btn" onclick="resetView()">Reset (R)</button>
+      <button class="btn" onclick="saveBookmark()">Bookmark</button>
+      <button class="btn" onclick="toggleBookmarks()">Bookmarks (B)</button>
+      <button class="btn" onclick="exportImage()">Export PNG</button>
+      <button class="btn" onclick="copyCoords()">Copy Coords</button>
+      <button class="btn" id="animate-btn" onclick="toggleAnimate()">Animate (A)</button>
+    </div>
+    <div class="btn-row">
+      <button class="btn" onclick="goToFamous('seahorse')">Seahorse Valley</button>
+      <button class="btn" onclick="goToFamous('elephant')">Elephant Valley</button>
+      <button class="btn" onclick="goToFamous('lightning')">Lightning</button>
+      <button class="btn" onclick="goToFamous('spiral')">Spiral</button>
+      <button class="btn" onclick="goToFamous('deep1')">Deep 10^50</button>
+    </div>
+  </div>
+</div>
+
+<div id="help-panel">
+  <kbd>F</kbd> Fly mode — <kbd>Space</kbd> fly in, <kbd>Shift</kbd> fly out, <kbd>WASD</kbd> pan, mouse aims<br>
+  <kbd>Scroll</kbd> Smooth zoom at cursor &nbsp; <kbd>Click</kbd> Zoom in &nbsp; <kbd>Right-click</kbd> Zoom out<br>
+  <kbd>+</kbd><kbd>-</kbd> Iterations &nbsp; <kbd>R</kbd> Reset &nbsp; <kbd>H</kbd> Toggle UI &nbsp; <kbd>A</kbd> Animate<br>
+  <kbd>1-9</kbd> Color presets &nbsp; <kbd>S</kbd> Export PNG &nbsp; <kbd>B</kbd> Bookmarks<br>
+  <span style="color:#4fc3f7">Perturbation theory — true Mandelbrot at any depth</span>
+</div>
+
+<div id="bookmark-panel">
+  <div style="font-weight:bold;margin-bottom:8px;color:#fff;">Bookmarks</div>
+  <div id="bookmark-list"></div>
+</div>
+
+<!-- ==================== VERTEX SHADER ==================== -->
+<script id="vs" type="x-shader/x-vertex">
+attribute vec2 a_pos;
+void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
+</script>
+
+<!-- ==================== CLASSIC SHADER (shallow zoom, no perturbation) ==================== -->
+<script id="fs-classic" type="x-shader/x-fragment">
+precision highp float;
+uniform vec2 u_resolution;
+uniform vec2 u_centerRe, u_centerIm, u_rangeRe, u_rangeIm;
+uniform int u_maxIter;
+uniform int u_colorScheme;
+uniform float u_colorOffset, u_colorScale;
+uniform int u_smooth;
+
+vec2 df_set(float a) { return vec2(a, 0.0); }
+vec2 qts(float a, float b) { float s=a+b; return vec2(s, b-(s-a)); }
+vec2 ts(float a, float b) { float s=a+b,v=s-a; return vec2(s, (a-(s-v))+(b-v)); }
+vec2 df_add(vec2 a, vec2 b) { vec2 s=ts(a.x,b.x); s.y+=a.y+b.y; return qts(s.x,s.y); }
+vec2 df_sub(vec2 a, vec2 b) { return df_add(a, vec2(-b.x,-b.y)); }
+vec2 split(float a) { float t=4097.0*a,h=t-(t-a); return vec2(h, a-h); }
+vec2 tp(float a, float b) { float p=a*b; vec2 sa=split(a),sb=split(b); return vec2(p, ((sa.x*sb.x-p)+sa.x*sb.y+sa.y*sb.x)+sa.y*sb.y); }
+vec2 df_mul(vec2 a, vec2 b) { vec2 p=tp(a.x,b.x); p.y+=a.x*b.y+a.y*b.x; return qts(p.x,p.y); }
+vec2 df_sqr(vec2 a) { vec2 p=tp(a.x,a.x); p.y+=2.0*a.x*a.y; return qts(p.x,p.y); }
+float df_f(vec2 a) { return a.x+a.y; }
+
+vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) { return a+b*cos(6.28318*(c*t+d)); }
+vec3 hsv2rgb(float h, float s, float v) { vec3 c=vec3(h,s,v); vec3 rgb=clamp(abs(mod(c.x*6.0+vec3(0,4,2),6.0)-3.0)-1.0,0.0,1.0); return c.z*mix(vec3(1),rgb,c.y); }
+vec3 getColor(float val, float mi) {
+  if(val<0.0)return vec3(0);
+  float t=mod(val*u_colorScale+u_colorOffset*mi,mi)/mi; if(t<0.0)t+=1.0;
+  if(u_colorScheme==0)return hsv2rgb(t,.85,.55+.3*sin(t*6.28));
+  if(u_colorScheme==1)return palette(t,vec3(0,.03,.39),vec3(.5,.4,.6),vec3(1),vec3(0,.1,.2));
+  if(u_colorScheme==2)return vec3(mod(t*4.0,1.0),mod(t*2.5,1.0),1.0-t);
+  if(u_colorScheme==3)return palette(t,vec3(.5,0,0),vec3(.5,.3,0),vec3(1,.8,.4),vec3(0,.15,.2));
+  if(u_colorScheme==4)return palette(t,vec3(0,.15,.3),vec3(.3,.4,.4),vec3(1),vec3(0,.05,.1));
+  if(u_colorScheme==5)return vec3(sin(t*25.0)*.5+.5,sin(t*30.0+2.0)*.5+.5,sin(t*35.0+4.0)*.5+.5);
+  if(u_colorScheme==6){float v=sqrt(t);return vec3(v);}
+  if(u_colorScheme==7)return palette(t,vec3(.3,.1,.35),vec3(.4,.3,.3),vec3(1,.8,.7),vec3(.05,.1,.15));
+  if(u_colorScheme==8)return hsv2rgb(t,1.0,.5+sin(t*20.0)*.3);
+  if(u_colorScheme==9)return palette(t,vec3(.25,.2,.1),vec3(.25,.2,.1),vec3(1,1,.5),vec3(0,.15,.2));
+  return vec3(t);
+}
+
+void main() {
+  vec2 uv=gl_FragCoord.xy/u_resolution;
+  float px=uv.x-0.5, py=-(uv.y-0.5);
+  vec2 c_re=df_add(u_centerRe,df_mul(u_rangeRe,df_set(px)));
+  vec2 c_im=df_add(u_centerIm,df_mul(u_rangeIm,df_set(py)));
+  vec2 zr=df_set(0.0),zi=df_set(0.0);
+  vec2 cr=c_re,ci=c_im;
+  vec2 zr2=df_sqr(zr),zi2=df_sqr(zi);
+  float mi=float(u_maxIter);
+  float crf=df_f(cr),cif=df_f(ci);
+  float q=(crf-.25)*(crf-.25)+cif*cif;
+  if(q*(q+(crf-.25))<=.25*cif*cif){gl_FragColor=vec4(0,0,0,1);return;}
+  if((crf+1.0)*(crf+1.0)+cif*cif<=.0625){gl_FragColor=vec4(0,0,0,1);return;}
+  int iter=0;
+  for(int i=0;i<10000;i++){
+    if(i>=u_maxIter)break;
+    if(df_f(df_add(zr2,zi2))>256.0)break;
+    zi=df_add(df_mul(df_mul(df_set(2.0),zr),zi),ci);
+    zr=df_add(df_sub(zr2,zi2),cr);
+    zr2=df_sqr(zr);zi2=df_sqr(zi);
+    iter++;
+  }
+  float val;
+  if(iter>=u_maxIter)val=-1.0;
+  else if(u_smooth==1){float m2=df_f(df_add(zr2,zi2));val=float(iter)+1.0-log(log(m2)*.5/log(2.0))/log(2.0);}
+  else val=float(iter);
+  gl_FragColor=vec4(getColor(val,mi),1.0);
+}
+</script>
+
+<!-- ==================== PERTURBATION SHADER (deep zoom) ==================== -->
+<script id="fs-perturb" type="x-shader/x-fragment">
+precision highp float;
+uniform vec2 u_resolution;
+uniform sampler2D u_refOrbit;   // RGBA32F texture: [Re(Z_n), Im(Z_n), |Z_n|^2, 0]
+uniform int u_refEscape;        // Reference orbit escape iteration
+uniform float u_refTexSize;     // Texture width
+uniform vec2 u_pixelScale;      // Complex range per pixel [re, im]
+uniform vec2 u_offsetFromRef;   // Viewport center offset from reference point
+uniform int u_maxIter;
+uniform int u_colorScheme;
+uniform float u_colorOffset, u_colorScale;
+uniform int u_smooth;
+uniform int u_saSkip;           // Series approximation: skip to this iteration
+uniform vec2 u_saA, u_saB, u_saC; // SA coefficients at skip iteration [re, im]
+
+vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) { return a+b*cos(6.28318*(c*t+d)); }
+vec3 hsv2rgb(float h, float s, float v) { vec3 c=vec3(h,s,v); vec3 rgb=clamp(abs(mod(c.x*6.0+vec3(0,4,2),6.0)-3.0)-1.0,0.0,1.0); return c.z*mix(vec3(1),rgb,c.y); }
+vec3 getColor(float val, float mi) {
+  if(val<0.0)return vec3(0);
+  float t=mod(val*u_colorScale+u_colorOffset*mi,mi)/mi; if(t<0.0)t+=1.0;
+  if(u_colorScheme==0)return hsv2rgb(t,.85,.55+.3*sin(t*6.28));
+  if(u_colorScheme==1)return palette(t,vec3(0,.03,.39),vec3(.5,.4,.6),vec3(1),vec3(0,.1,.2));
+  if(u_colorScheme==2)return vec3(mod(t*4.0,1.0),mod(t*2.5,1.0),1.0-t);
+  if(u_colorScheme==3)return palette(t,vec3(.5,0,0),vec3(.5,.3,0),vec3(1,.8,.4),vec3(0,.15,.2));
+  if(u_colorScheme==4)return palette(t,vec3(0,.15,.3),vec3(.3,.4,.4),vec3(1),vec3(0,.05,.1));
+  if(u_colorScheme==5)return vec3(sin(t*25.0)*.5+.5,sin(t*30.0+2.0)*.5+.5,sin(t*35.0+4.0)*.5+.5);
+  if(u_colorScheme==6){float v=sqrt(t);return vec3(v);}
+  if(u_colorScheme==7)return palette(t,vec3(.3,.1,.35),vec3(.4,.3,.3),vec3(1,.8,.7),vec3(.05,.1,.15));
+  if(u_colorScheme==8)return hsv2rgb(t,1.0,.5+sin(t*20.0)*.3);
+  if(u_colorScheme==9)return palette(t,vec3(.25,.2,.1),vec3(.25,.2,.1),vec3(1,1,.5),vec3(0,.15,.2));
+  return vec3(t);
+}
+
+// Lookup reference orbit at iteration n
+vec4 getRef(int n) {
+  float fn = float(n) + 0.5;
+  float texW = u_refTexSize;
+  float y = floor(fn / texW) + 0.5;
+  float x = mod(fn, texW) + 0.5;
+  return texture2D(u_refOrbit, vec2(x / texW, y / texW));
+}
+
+void main() {
+  vec2 uv = gl_FragCoord.xy / u_resolution;
+  float mi = float(u_maxIter);
+
+  // This pixel's offset from the reference point (dc)
+  float dc_re = (uv.x - 0.5) * u_pixelScale.x + u_offsetFromRef.x;
+  float dc_im = -(uv.y - 0.5) * u_pixelScale.y + u_offsetFromRef.y;
+
+  // Initialize perturbation
+  float zr = 0.0, zi = 0.0;
+  int startIter = 0;
+
+  // Series approximation: skip early iterations
+  if (u_saSkip > 0) {
+    // z_N = A*dc + B*dc^2 + C*dc^3
+    // dc^2 = (dc_re + i*dc_im)^2
+    float dc2_re = dc_re * dc_re - dc_im * dc_im;
+    float dc2_im = 2.0 * dc_re * dc_im;
+    // dc^3 = dc * dc^2
+    float dc3_re = dc_re * dc2_re - dc_im * dc2_im;
+    float dc3_im = dc_re * dc2_im + dc_im * dc2_re;
+
+    // A*dc (complex multiply)
+    float t1r = u_saA.x * dc_re - u_saA.y * dc_im;
+    float t1i = u_saA.x * dc_im + u_saA.y * dc_re;
+    // B*dc^2
+    float t2r = u_saB.x * dc2_re - u_saB.y * dc2_im;
+    float t2i = u_saB.x * dc2_im + u_saB.y * dc2_re;
+    // C*dc^3
+    float t3r = u_saC.x * dc3_re - u_saC.y * dc3_im;
+    float t3i = u_saC.x * dc3_im + u_saC.y * dc3_re;
+
+    zr = t1r + t2r + t3r;
+    zi = t1i + t2i + t3i;
+    startIter = u_saSkip;
+  }
+
+  int iter = startIter;
+  int refN = startIter;
+
+  for (int i = 0; i < 50000; i++) {
+    if (iter >= u_maxIter) break;
+    if (refN >= u_refEscape) break;
+
+    vec4 ref = getRef(refN);
+    float Zr = ref.x, Zi = ref.y, Zmag2 = ref.z;
+
+    // Full point: Z + z
+    float fullRe = Zr + zr;
+    float fullIm = Zi + zi;
+    float fullMag2 = fullRe * fullRe + fullIm * fullIm;
+
+    // Escape check
+    if (fullMag2 > 256.0) break;
+
+    // Glitch/rebase check: if perturbation is large relative to reference
+    float dzMag2 = zr * zr + zi * zi;
+    if (dzMag2 > 1e-3 * Zmag2 && Zmag2 > 0.0) {
+      // Rebase: restart perturbation from full value
+      // The full value Z+z is known, try to express relative to a later reference point
+      // Simple rebase: just reset z = full - Z (reduces cancellation error)
+      zr = fullRe - Zr;
+      zi = fullIm - Zi;
+    }
+
+    // Perturbation iteration: z_{n+1} = 2*Z_n*z_n + z_n^2 + dc
+    float new_zr = 2.0 * (Zr * zr - Zi * zi) + zr * zr - zi * zi + dc_re;
+    float new_zi = 2.0 * (Zr * zi + Zi * zr) + 2.0 * zr * zi + dc_im;
+    zr = new_zr;
+    zi = new_zi;
+    iter++;
+    refN++;
+  }
+
+  // Smooth coloring
+  float val;
+  if (iter >= u_maxIter) {
+    val = -1.0;
+  } else if (u_smooth == 1) {
+    float fullRe2, fullIm2;
+    if (refN < u_refEscape) {
+      vec4 ref = getRef(refN);
+      fullRe2 = ref.x + zr; fullIm2 = ref.y + zi;
+    } else {
+      fullRe2 = zr; fullIm2 = zi;
+    }
+    float mag2 = fullRe2 * fullRe2 + fullIm2 * fullIm2;
+    if (mag2 > 1.0) {
+      val = float(iter) + 1.0 - log(log(mag2) * 0.5 / log(2.0)) / log(2.0);
+    } else {
+      val = float(iter);
+    }
+  } else {
+    val = float(iter);
+  }
+
+  gl_FragColor = vec4(getColor(val, mi), 1.0);
+}
+</script>
+
+<script>
+// ==================== WebGL Setup ====================
+const canvas = document.getElementById('fractal');
+const gl = canvas.getContext('webgl', { antialias: false, preserveDrawingBuffer: true });
+if (!gl) alert('WebGL not supported');
+
+// Required extension for float textures
+const floatExt = gl.getExtension('OES_texture_float');
+if (!floatExt) console.warn('OES_texture_float not available — perturbation mode will not work');
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error('Shader error:', gl.getShaderInfoLog(s));
+    return null;
+  }
+  return s;
+}
+
+function createProgram(vsId, fsId) {
+  const v = compileShader(gl.VERTEX_SHADER, document.getElementById(vsId).textContent);
+  const f = compileShader(gl.FRAGMENT_SHADER, document.getElementById(fsId).textContent);
+  const p = gl.createProgram();
+  gl.attachShader(p, v); gl.attachShader(p, f);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) console.error(gl.getProgramInfoLog(p));
+  return p;
+}
+
+const progClassic = createProgram('vs', 'fs-classic');
+const progPerturb = createProgram('vs', 'fs-perturb');
+
+// Shared vertex buffer
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+function setupAttribs(prog) {
+  const a = gl.getAttribLocation(prog, 'a_pos');
+  gl.enableVertexAttribArray(a);
+  gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+}
+
+// Uniform location caches
+function getUniforms(prog, names) {
+  const u = {};
+  names.forEach(n => { u[n] = gl.getUniformLocation(prog, n); });
+  return u;
+}
+
+const uClassic = getUniforms(progClassic, [
+  'u_resolution','u_centerRe','u_centerIm','u_rangeRe','u_rangeIm',
+  'u_maxIter','u_colorScheme','u_colorOffset','u_colorScale','u_smooth'
+]);
+
+const uPerturb = getUniforms(progPerturb, [
+  'u_resolution','u_refOrbit','u_refEscape','u_refTexSize','u_pixelScale',
+  'u_offsetFromRef','u_maxIter','u_colorScheme','u_colorOffset','u_colorScale',
+  'u_smooth','u_saSkip','u_saA','u_saB','u_saC'
+]);
+
+// Reference orbit texture
+let refTexture = null;
+let refTexSize = 0;
+
+// ==================== State ====================
+let dpr = window.devicePixelRatio || 1;
+let displayW = window.innerWidth, displayH = window.innerHeight;
+
+function splitDouble(val) {
+  const hi = Math.fround(val);
+  return [hi, val - hi];
+}
+
+let state = {
+  centerRe: -0.5, centerIm: 0, zoom: 1, maxIter: 256,
+  colorScheme: 1, colorOffset: 0, colorScale: 1, smooth: 1,
+  autoIter: true,
+  // For deep zoom: string representation of center
+  centerReStr: '-0.5', centerImStr: '0',
+};
+
+let flyMode = false, flySpeed = 2.5;
+let flyKeys = { forward:false, backward:false, left:false, right:false, up:false, down:false };
+let mouseX = displayW/2, mouseY = displayH/2;
+let isDragging = false, dragStart = {x:0,y:0}, dragOffset = {x:0,y:0};
+let dragCenterStart = {re:0, im:0};
+let animating = false, uiVisible = true;
+let zoomVelocity = 0; // continuous zoom velocity from scroll
+let frameCount = 0, lastFpsTime = performance.now(), currentFps = 0;
+
+// Perturbation state
+let renderMode = 'classic'; // 'classic' or 'perturb'
+let refOrbit = null; // { orbitRe, orbitIm, orbitMag2, escapeIter, centerRe, centerIm, saSkip, sa* }
+let refTaskId = 0;
+let workerBusy = false;
+const PERTURB_THRESHOLD = 1e12; // Switch to perturbation above this zoom
+
+// ==================== Worker ====================
+const worker = new Worker('./worker.js');
+let workerReady = false;
+
+worker.onmessage = (e) => {
+  const { type } = e.data;
+  if (type === 'ready') {
+    workerReady = true;
+    console.log('gmp-wasm worker ready');
+    document.getElementById('v-ref').textContent = 'ready';
+  } else if (type === 'error') {
+    console.error('Worker error:', e.data.message);
+    document.getElementById('v-ref').textContent = 'ERROR: ' + e.data.message;
+  } else if (type === 'referenceReady') {
+    handleReferenceReady(e.data);
+  } else if (type === 'progress') {
+    document.getElementById('v-ref').textContent = `computing... ${e.data.iteration}/${e.data.maxIter}`;
+  }
+};
+
+function requestReference() {
+  if (!workerReady || workerBusy) return;
+
+  const zoomExp = Math.log10(Math.max(1, state.zoom));
+  const taskId = ++refTaskId;
+
+  workerBusy = true;
+  document.getElementById('v-ref').textContent = 'computing...';
+
+  worker.postMessage({
+    type: 'computeReference',
+    centerRe: state.centerReStr,
+    centerIm: state.centerImStr,
+    maxIter: state.maxIter,
+    zoomExponent: zoomExp,
+    taskId,
+  });
+}
+
+function handleReferenceReady(data) {
+  workerBusy = false;
+  if (data.taskId !== refTaskId) return; // stale result
+
+  refOrbit = data;
+  uploadReferenceTexture(data);
+
+  document.getElementById('v-ref').textContent =
+    `${data.escapeIter} iter, SA skip ${data.saSkip}`;
+
+  // Trigger re-render
+  renderPerturb();
+}
+
+function uploadReferenceTexture(ref) {
+  const n = ref.escapeIter;
+  if (n === 0) return;
+
+  // Pack into square texture: RGBA = [Re(Z_n), Im(Z_n), |Z_n|^2, 0]
+  const texW = Math.ceil(Math.sqrt(n));
+  const texH = texW;
+  const pixels = new Float32Array(texW * texH * 4);
+
+  for (let i = 0; i < n; i++) {
+    pixels[i * 4 + 0] = ref.orbitRe[i];
+    pixels[i * 4 + 1] = ref.orbitIm[i];
+    pixels[i * 4 + 2] = ref.orbitMag2[i];
+    pixels[i * 4 + 3] = 0;
+  }
+
+  if (!refTexture) refTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, refTexture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, texW, texH, 0, gl.RGBA, gl.FLOAT, pixels);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  refTexSize = texW;
+}
+
+// ==================== Render ====================
+function renderClassic() {
+  gl.useProgram(progClassic);
+  setupAttribs(progClassic);
+
+  const aspect = displayW / displayH;
+  const rangeRe = 3.5 / state.zoom;
+  const rangeIm = rangeRe / aspect;
+  const cr = splitDouble(state.centerRe), ci = splitDouble(state.centerIm);
+  const rr = splitDouble(rangeRe), ri = splitDouble(rangeIm);
+
+  gl.uniform2f(uClassic.u_resolution, canvas.width, canvas.height);
+  gl.uniform2f(uClassic.u_centerRe, cr[0], cr[1]);
+  gl.uniform2f(uClassic.u_centerIm, ci[0], ci[1]);
+  gl.uniform2f(uClassic.u_rangeRe, rr[0], rr[1]);
+  gl.uniform2f(uClassic.u_rangeIm, ri[0], ri[1]);
+  gl.uniform1i(uClassic.u_maxIter, Math.min(state.maxIter, 10000));
+  gl.uniform1i(uClassic.u_colorScheme, state.colorScheme);
+  gl.uniform1f(uClassic.u_colorOffset, state.colorOffset);
+  gl.uniform1f(uClassic.u_colorScale, state.colorScale);
+  gl.uniform1i(uClassic.u_smooth, state.smooth);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+function renderPerturb() {
+  if (!refOrbit || !refTexture) {
+    renderClassic(); // fallback
+    return;
+  }
+
+  gl.useProgram(progPerturb);
+  setupAttribs(progPerturb);
+
+  const aspect = displayW / displayH;
+  const rangeRe = 3.5 / state.zoom;
+  const rangeIm = rangeRe / aspect;
+
+  // Offset from reference center to current viewport center
+  const offsetRe = state.centerRe - (refOrbit.centerReF || 0);
+  const offsetIm = state.centerIm - (refOrbit.centerImF || 0);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, refTexture);
+
+  gl.uniform2f(uPerturb.u_resolution, canvas.width, canvas.height);
+  gl.uniform1i(uPerturb.u_refOrbit, 0);
+  gl.uniform1i(uPerturb.u_refEscape, refOrbit.escapeIter);
+  gl.uniform1f(uPerturb.u_refTexSize, refTexSize);
+  gl.uniform2f(uPerturb.u_pixelScale, rangeRe, rangeIm);
+  gl.uniform2f(uPerturb.u_offsetFromRef, offsetRe, offsetIm);
+  gl.uniform1i(uPerturb.u_maxIter, Math.min(state.maxIter, 50000));
+  gl.uniform1i(uPerturb.u_colorScheme, state.colorScheme);
+  gl.uniform1f(uPerturb.u_colorOffset, state.colorOffset);
+  gl.uniform1f(uPerturb.u_colorScale, state.colorScale);
+  gl.uniform1i(uPerturb.u_smooth, state.smooth);
+
+  // Series approximation
+  const saSkip = refOrbit.saSkip || 0;
+  gl.uniform1i(uPerturb.u_saSkip, saSkip);
+  if (saSkip > 0 && refOrbit.saAre) {
+    gl.uniform2f(uPerturb.u_saA, refOrbit.saAre[saSkip], refOrbit.saAim[saSkip]);
+    gl.uniform2f(uPerturb.u_saB, refOrbit.saBre[saSkip], refOrbit.saBim[saSkip]);
+    gl.uniform2f(uPerturb.u_saC, refOrbit.saCre[saSkip], refOrbit.saCim[saSkip]);
+  } else {
+    gl.uniform2f(uPerturb.u_saA, 0, 0);
+    gl.uniform2f(uPerturb.u_saB, 0, 0);
+    gl.uniform2f(uPerturb.u_saC, 0, 0);
+  }
+
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+function render() {
+  const zoomExp = Math.log10(Math.max(1, state.zoom));
+
+  // Auto switch mode
+  if (state.zoom > PERTURB_THRESHOLD && floatExt) {
+    if (renderMode !== 'perturb') {
+      renderMode = 'perturb';
+      requestReference();
+    }
+    renderPerturb();
+  } else {
+    renderMode = 'classic';
+    renderClassic();
+  }
+
+  document.getElementById('v-mode').textContent =
+    renderMode === 'perturb' ? `Perturbation (10^${zoomExp.toFixed(0)})` : 'Classic (GPU)';
+}
+
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  displayW = window.innerWidth; displayH = window.innerHeight;
+  canvas.width = Math.floor(displayW * dpr);
+  canvas.height = Math.floor(displayH * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', () => { resize(); render(); });
+
+// ==================== Reference orbit management ====================
+let lastRefCenter = { re: 0, im: 0, zoom: 0 };
+
+function checkNeedNewReference() {
+  if (renderMode !== 'perturb') return;
+  if (workerBusy) return;
+
+  const pixelSize = 3.5 / state.zoom / displayW;
+  const drift = Math.max(
+    Math.abs(state.centerRe - lastRefCenter.re),
+    Math.abs(state.centerIm - lastRefCenter.im)
+  );
+
+  // Recompute if center drifted more than 10% of viewport
+  const needNew = !refOrbit ||
+    drift > pixelSize * displayW * 0.1 ||
+    state.maxIter > (refOrbit.escapeIter || 0);
+
+  if (needNew) {
+    lastRefCenter = { re: state.centerRe, im: state.centerIm, zoom: state.zoom };
+    // Update string representation for arbitrary precision
+    state.centerReStr = state.centerRe.toPrecision(17);
+    state.centerImStr = state.centerIm.toPrecision(17);
+    requestReference();
+  }
+}
+
+// ==================== Coordinate Mapping ====================
+function pixelToComplex(cssX, cssY) {
+  const aspect = displayW / displayH;
+  const rangeRe = 3.5 / state.zoom;
+  const rangeIm = rangeRe / aspect;
+  return {
+    re: state.centerRe + (cssX / displayW - 0.5) * rangeRe,
+    im: state.centerIm - (cssY / displayH - 0.5) * rangeIm,
+  };
+}
+
+function applyCenterFromAnchor(a) {
+  const aspect = displayW / displayH;
+  const rangeRe = 3.5 / state.zoom;
+  const rangeIm = rangeRe / aspect;
+  state.centerRe = a.re - (a.screenX / displayW - 0.5) * rangeRe;
+  state.centerIm = a.im + (a.screenY / displayH - 0.5) * rangeIm;
+}
+
+// ==================== UI ====================
+function updateInfo() {
+  document.getElementById('v-re').textContent = state.centerRe.toPrecision(16);
+  document.getElementById('v-im').textContent = state.centerIm.toPrecision(16);
+  document.getElementById('v-zoom').textContent = formatZoom(state.zoom);
+  document.getElementById('v-iter').textContent = state.maxIter;
+  document.getElementById('v-fps').textContent = currentFps;
+}
+
+function formatZoom(z) {
+  if (z >= 1e15) return '10^' + Math.log10(z).toFixed(1);
+  if (z >= 1e12) return z.toExponential(2) + 'x';
+  if (z >= 1e6) return (z/1e6).toFixed(1) + 'Mx';
+  if (z >= 1e3) return (z/1e3).toFixed(1) + 'Kx';
+  return z.toFixed(1) + 'x';
+}
+
+function autoIterations() {
+  if (!state.autoIter) return;
+  const want = Math.max(256, Math.floor(200 * Math.log2(Math.max(1, state.zoom))));
+  if (want > state.maxIter) {
+    state.maxIter = Math.min(50000, want);
+    document.getElementById('iter-slider').value = state.maxIter;
+    document.getElementById('iter-val').textContent = state.maxIter;
+  }
+}
+
+// ==================== Main Loop ====================
+let lastTime = performance.now();
+let refCheckTimer = 0;
+
+function mainLoop(now) {
+  requestAnimationFrame(mainLoop);
+  const dt = Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
+
+  frameCount++;
+  if (now - lastFpsTime > 500) {
+    currentFps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+    lastFpsTime = now; frameCount = 0;
+  }
+
+  let needsRender = false;
+
+  // ---- Continuous zoom toward mouse cursor ----
+  // zoomVelocity is set by scroll wheel and decays over time
+  // This makes scroll feel like a thrust — it zooms toward cursor smoothly
+  if (Math.abs(zoomVelocity) > 0.01) {
+    const anchor = pixelToComplex(mouseX, mouseY);
+    const factor = Math.pow(2, zoomVelocity * dt);
+    state.zoom = Math.max(0.3, state.zoom * factor);
+    // Recompute center so anchor stays under cursor
+    applyCenterFromAnchor({re:anchor.re, im:anchor.im, screenX:mouseX, screenY:mouseY});
+    autoIterations();
+    // Decay velocity (friction)
+    zoomVelocity *= Math.pow(0.05, dt); // decays to ~5% per second
+    if (Math.abs(zoomVelocity) < 0.01) zoomVelocity = 0;
+    needsRender = true;
+  }
+
+  // Flight mode (Space/Shift + WASD)
+  if (flyMode) {
+    const range = 3.5 / state.zoom;
+    const speed = flySpeed;
+    if (flyKeys.forward) {
+      const a = pixelToComplex(mouseX, mouseY);
+      state.zoom *= Math.pow(1+speed, dt*2);
+      applyCenterFromAnchor({re:a.re,im:a.im,screenX:mouseX,screenY:mouseY});
+      autoIterations();
+      needsRender = true;
+    }
+    if (flyKeys.backward) {
+      const a = pixelToComplex(mouseX, mouseY);
+      state.zoom = Math.max(0.3, state.zoom / Math.pow(1+speed, dt*2));
+      applyCenterFromAnchor({re:a.re,im:a.im,screenX:mouseX,screenY:mouseY});
+      needsRender = true;
+    }
+    const ps = range * speed * dt;
+    if (flyKeys.left)  { state.centerRe -= ps; needsRender = true; }
+    if (flyKeys.right) { state.centerRe += ps; needsRender = true; }
+    if (flyKeys.up)    { state.centerIm += ps; needsRender = true; }
+    if (flyKeys.down)  { state.centerIm -= ps; needsRender = true; }
+  }
+
+  if (animating) {
+    state.colorOffset = (state.colorOffset + dt * 0.15) % 1;
+    document.getElementById('color-offset').value = state.colorOffset;
+    document.getElementById('offset-val').textContent = state.colorOffset.toFixed(2);
+    needsRender = true;
+  }
+
+  // Periodically check if reference orbit needs recomputing
+  refCheckTimer += dt;
+  if (refCheckTimer > 0.3) {
+    refCheckTimer = 0;
+    checkNeedNewReference();
+  }
+
+  if (needsRender) { render(); updateInfo(); }
+}
+
+// ==================== Mouse ====================
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && !flyMode) {
+    isDragging = true;
+    dragStart = {x:e.clientX,y:e.clientY};
+    dragOffset = {x:0,y:0};
+    dragCenterStart = {re:state.centerRe,im:state.centerIm};
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
+window.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  const c = pixelToComplex(e.clientX, e.clientY);
+  document.getElementById('v-cursor').textContent = `${c.re.toFixed(10)}, ${c.im.toFixed(10)}i`;
+  if (isDragging) {
+    dragOffset.x = e.clientX - dragStart.x;
+    dragOffset.y = e.clientY - dragStart.y;
+    const aspect = displayW / displayH;
+    const rangeRe = 3.5 / state.zoom;
+    const rangeIm = rangeRe / aspect;
+    state.centerRe = dragCenterStart.re - (dragOffset.x / displayW) * rangeRe;
+    state.centerIm = dragCenterStart.im + (dragOffset.y / displayH) * rangeIm;
+    render(); updateInfo();
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (isDragging) {
+    isDragging = false;
+    canvas.style.cursor = flyMode ? 'none' : 'crosshair';
+    if (Math.abs(dragOffset.x) <= 3 && Math.abs(dragOffset.y) <= 3 && e.button === 0) {
+      // Click = strong zoom impulse toward cursor
+      zoomVelocity += 8.0;
+    }
+  }
+});
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  zoomVelocity -= 8.0;
+});
+
+window.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  // Add zoom velocity — each scroll tick adds thrust toward cursor
+  const impulse = e.deltaY < 0 ? 4.0 : -4.0;
+  zoomVelocity += impulse;
+  // Clamp max velocity
+  zoomVelocity = Math.max(-20, Math.min(20, zoomVelocity));
+}, { passive: false });
+
+// ==================== Keyboard ====================
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (flyMode) {
+    switch(e.key) {
+      case ' ': e.preventDefault(); flyKeys.forward=true; return;
+      case 'Shift': flyKeys.backward=true; return;
+      case 'w':case'W':case'ArrowUp': e.preventDefault(); flyKeys.up=true; return;
+      case 's':case'S':case'ArrowDown': e.preventDefault(); flyKeys.down=true; return;
+      case 'a':case'A':case'ArrowLeft': e.preventDefault(); flyKeys.left=true; return;
+      case 'd':case'D':case'ArrowRight': e.preventDefault(); flyKeys.right=true; return;
+    }
+  }
+  if (!flyMode) {
+    const r=3.5/state.zoom,p=r*.15;
+    switch(e.key) {
+      case'ArrowLeft':state.centerRe-=p;render();updateInfo();break;
+      case'ArrowRight':state.centerRe+=p;render();updateInfo();break;
+      case'ArrowUp':state.centerIm+=p;render();updateInfo();break;
+      case'ArrowDown':state.centerIm-=p;render();updateInfo();break;
+    }
+  }
+  switch(e.key) {
+    case'+':case'=':setIter(Math.min(50000,state.maxIter+50));break;
+    case'-':case'_':setIter(Math.max(50,state.maxIter-50));break;
+    case'r':case'R':resetView();break;
+    case'h':case'H':toggleUI();break;
+    case'f':case'F':toggleFlyMode();break;
+    case'b':case'B':toggleBookmarks();break;
+    case'Escape':if(flyMode)toggleFlyMode();break;
+    case'1':setScheme(0);break;case'2':setScheme(1);break;
+    case'3':setScheme(2);break;case'4':setScheme(3);break;
+    case'5':setScheme(4);break;case'6':setScheme(5);break;
+    case'7':setScheme(6);break;case'8':setScheme(7);break;
+    case'9':setScheme(8);break;
+  }
+  if(!flyMode){switch(e.key){case's':case'S':exportImage();break;case'a':case'A':toggleAnimate();break;}}
+});
+
+window.addEventListener('keyup', (e) => {
+  switch(e.key) {
+    case' ':flyKeys.forward=false;break;
+    case'Shift':flyKeys.backward=false;break;
+    case'w':case'W':case'ArrowUp':flyKeys.up=false;break;
+    case's':case'S':case'ArrowDown':flyKeys.down=false;break;
+    case'a':case'A':case'ArrowLeft':flyKeys.left=false;break;
+    case'd':case'D':case'ArrowRight':flyKeys.right=false;break;
+  }
+});
+
+// ==================== UI Controls ====================
+document.getElementById('iter-slider').addEventListener('input', (e) => {
+  state.maxIter=parseInt(e.target.value);
+  document.getElementById('iter-val').textContent=state.maxIter;
+  render();
+});
+document.getElementById('color-scheme').addEventListener('change', (e) => { state.colorScheme=parseInt(e.target.value); render(); });
+function setScheme(n) { state.colorScheme=n; document.getElementById('color-scheme').value=n; render(); }
+document.getElementById('color-offset').addEventListener('input', (e) => {
+  state.colorOffset=parseFloat(e.target.value);
+  document.getElementById('offset-val').textContent=state.colorOffset.toFixed(2);
+  render();
+});
+document.getElementById('color-scale').addEventListener('input', (e) => {
+  state.colorScale=parseFloat(e.target.value);
+  document.getElementById('scale-val').textContent=state.colorScale.toFixed(1);
+  render();
+});
+document.getElementById('smooth-check').addEventListener('change', (e) => { state.smooth=e.target.checked?1:0; render(); });
+document.getElementById('auto-iter-check').addEventListener('change', (e) => { state.autoIter=e.target.checked; });
+document.getElementById('fly-speed').addEventListener('input', (e) => {
+  flySpeed=parseFloat(e.target.value);
+  document.getElementById('fly-speed-val').textContent=flySpeed.toFixed(1);
+});
+
+// ==================== Actions ====================
+function setIter(n) {
+  state.maxIter=n;
+  document.getElementById('iter-slider').value=n;
+  document.getElementById('iter-val').textContent=n;
+  if (renderMode === 'perturb') requestReference(); // need more reference iterations
+  render();
+}
+
+function resetView() {
+  state.centerRe=-0.5; state.centerIm=0; state.zoom=1; zoomVelocity=0;
+  state.centerReStr='-0.5'; state.centerImStr='0';
+  state.maxIter=256; refOrbit=null; renderMode='classic';
+  document.getElementById('iter-slider').value=256;
+  document.getElementById('iter-val').textContent=256;
+  document.getElementById('v-ref').textContent='--';
+  render(); updateInfo();
+}
+
+function toggleUI() {
+  uiVisible=!uiVisible;
+  document.getElementById('ui-overlay').style.display=uiVisible?'':'none';
+  document.getElementById('help-panel').style.display=uiVisible?'':'none';
+}
+
+function toggleAnimate() {
+  animating=!animating;
+  document.getElementById('animate-btn').classList.toggle('active',animating);
+}
+
+function toggleFlyMode() {
+  flyMode=!flyMode;
+  document.getElementById('fly-btn').classList.toggle('active',flyMode);
+  document.getElementById('fly-indicator').classList.toggle('visible',flyMode);
+  canvas.style.cursor=flyMode?'none':'crosshair';
+  if(!flyMode)flyKeys={forward:false,backward:false,left:false,right:false,up:false,down:false};
+}
+
+function goToFamous(name) {
+  const spots = {
+    seahorse: {re:-0.7463,im:0.1102,z:2000},
+    elephant: {re:0.2929,im:0.0153,z:500},
+    lightning: {re:-1.315180982097868,im:0.073481482143388,z:50000},
+    spiral: {re:-0.7435669,im:0.1314023,z:200000},
+    deep1: {re:-1.7490863748149414,im:0.0000000000000028,z:1e20},
+  };
+  const s = spots[name];
+  state.centerReStr = s.re.toString();
+  state.centerImStr = s.im.toString();
+  smoothZoomTo(s.re, s.im, s.z);
+}
+
+function smoothZoomTo(re,im,tz) {
+  const sRe=state.centerRe,sIm=state.centerIm,sZ=state.zoom;
+  const steps=90; let step=0;
+  function frame() {
+    step++;
+    const t=step/steps, ease=t*t*(3-2*t);
+    state.centerRe=sRe+(re-sRe)*ease;
+    state.centerIm=sIm+(im-sIm)*ease;
+    state.zoom=sZ*Math.pow(tz/sZ,ease);
+    zoomVelocity=0;
+    autoIterations(); render(); updateInfo();
+    if(step<steps)requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+function exportImage() { render(); const l=document.createElement('a'); l.download=`mandelbrot_${Date.now()}.png`; l.href=canvas.toDataURL('image/png'); l.click(); }
+function copyCoords() { navigator.clipboard.writeText(`Center: ${state.centerReStr}, ${state.centerImStr}i | Zoom: ${state.zoom} | Iter: ${state.maxIter}`); }
+
+// ==================== Bookmarks ====================
+function getBookmarks(){try{return JSON.parse(localStorage.getItem('mandelbrot-bookmarks')||'[]')}catch{return[]}}
+function saveBookmark(){const n=prompt('Bookmark name:',`Zoom ${formatZoom(state.zoom)}`);if(!n)return;const b=getBookmarks();b.push({name:n,re:state.centerRe,im:state.centerIm,reStr:state.centerReStr,imStr:state.centerImStr,zoom:state.zoom,maxIter:state.maxIter,scheme:state.colorScheme});localStorage.setItem('mandelbrot-bookmarks',JSON.stringify(b));renderBookmarks();}
+function toggleBookmarks(){document.getElementById('bookmark-panel').classList.toggle('visible');renderBookmarks();}
+function renderBookmarks(){const l=document.getElementById('bookmark-list'),b=getBookmarks();l.innerHTML=b.length===0?'<div style="color:#666">No bookmarks</div>':b.map((x,i)=>`<div class="bookmark-item"><span onclick="loadBookmark(${i})">${x.name}</span><span class="bk-del" onclick="deleteBookmark(${i})">&times;</span></div>`).join('');}
+function loadBookmark(i){const b=getBookmarks()[i];if(!b)return;state.centerRe=b.re;state.centerIm=b.im;state.zoom=b.zoom;zoomVelocity=0;state.maxIter=b.maxIter;if(b.reStr)state.centerReStr=b.reStr;if(b.imStr)state.centerImStr=b.imStr;if(b.scheme!==undefined){state.colorScheme=b.scheme;document.getElementById('color-scheme').value=b.scheme;}document.getElementById('iter-slider').value=state.maxIter;document.getElementById('iter-val').textContent=state.maxIter;refOrbit=null;renderMode='classic';render();updateInfo();}
+function deleteBookmark(i){const b=getBookmarks();b.splice(i,1);localStorage.setItem('mandelbrot-bookmarks',JSON.stringify(b));renderBookmarks();}
+
+// ==================== Init ====================
+resize();
+render();
+updateInfo();
+requestAnimationFrame(mainLoop);
+</script>
+</body>
+</html>

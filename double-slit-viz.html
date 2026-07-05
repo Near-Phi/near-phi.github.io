@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Double Slit Experiment</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  overflow: hidden;
+}
+canvas {
+  display: block;
+}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// ============================================================
+//  Double-Slit Experiment — Continuous Wave Visualisation
+//  Crank-Nicolson ADI, continuous monochromatic source,
+//  absorbing (sponge) boundaries, phase-amplitude colouring
+// ============================================================
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// --- Grid -----------------------------------------------------------
+const N = 512;                // simulation grid
+const dx = 1.0;
+let dt = 0.12;
+const hbar = 1.0;
+const mass = 1.0;
+const k0 = 2.2;              // wave momentum (sets wavelength)
+
+// --- Slit geometry --------------------------------------------------
+const wallX = Math.floor(N * 0.35);   // barrier position
+const wallW = 4;                       // barrier thickness
+const slitWidth = 8;                   // each slit opening
+const slitSep = 42;                    // centre-to-centre distance
+const wallHeight = 300;                // potential height
+
+// --- Source ---------------------------------------------------------
+const srcX = 18;                       // source column (inside absorbing layer)
+const srcAmp = 0.06;                   // source amplitude per step
+
+// --- Absorbing sponge layer -----------------------------------------
+const spongeW = 14;
+
+// --- Detection screen -----------------------------------------------
+const detectorX = N - 30;
+const detectorAccum = new Float64Array(N);  // accumulated probability
+let detectorMax = 1e-12;
+
+// --- Arrays ---------------------------------------------------------
+const psiR = new Float64Array(N * N);
+const psiI = new Float64Array(N * N);
+const V    = new Float64Array(N * N);   // potential
+const damp = new Float64Array(N * N);   // damping factor per cell [0..1]
+
+// Tridiag temps
+const thomasCpR = new Float64Array(N);
+const thomasCpI = new Float64Array(N);
+const thomasDpR = new Float64Array(N);
+const thomasDpI = new Float64Array(N);
+
+const tmpR = new Float64Array(N * N);
+const tmpI = new Float64Array(N * N);
+
+const dR = new Float64Array(N);
+const dI = new Float64Array(N);
+const xR = new Float64Array(N);
+const xI = new Float64Array(N);
+
+// --- Canvas ---------------------------------------------------------
+let scale;
+let offCanvas, offCtx, imgData;
+
+function initCanvas() {
+  const sz = Math.min(window.innerWidth, window.innerHeight);
+  scale = Math.max(1, Math.floor(sz / N));
+  canvas.width = N * scale;
+  canvas.height = N * scale;
+  offCanvas = document.createElement('canvas');
+  offCanvas.width = N; offCanvas.height = N;
+  offCtx = offCanvas.getContext('2d');
+  imgData = offCtx.createImageData(N, N);
+}
+
+// --- Build potential & damping --------------------------------------
+function buildPotential() {
+  V.fill(0);
+  damp.fill(1);
+
+  // Absorbing sponge on all 4 edges
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      let d = 1.0;
+      // left (but leave source region undamped for first few cells)
+      if (i < spongeW) {
+        const t = (spongeW - i) / spongeW;
+        d = Math.min(d, 1 - t * t * 0.15);
+      }
+      // right
+      if (i >= N - spongeW) {
+        const t = (i - (N - spongeW)) / spongeW;
+        d = Math.min(d, 1 - t * t * 0.15);
+      }
+      // top
+      if (j < spongeW) {
+        const t = (spongeW - j) / spongeW;
+        d = Math.min(d, 1 - t * t * 0.15);
+      }
+      // bottom
+      if (j >= N - spongeW) {
+        const t = (j - (N - spongeW)) / spongeW;
+        d = Math.min(d, 1 - t * t * 0.15);
+      }
+      damp[j * N + i] = Math.max(0.7, d);
+    }
+  }
+
+  // Double slit barrier
+  const cy = N / 2;
+  const halfSep = slitSep / 2;
+  for (let j = 0; j < N; j++) {
+    for (let ii = 0; ii < wallW; ii++) {
+      const i = wallX + ii;
+      if (i >= 0 && i < N) {
+        const inSlit1 = Math.abs(j - (cy - halfSep)) < slitWidth / 2;
+        const inSlit2 = Math.abs(j - (cy + halfSep)) < slitWidth / 2;
+        if (!inSlit1 && !inSlit2) {
+          V[j * N + i] = wallHeight;
+        }
+      }
+    }
+  }
+}
+
+// --- Source injection -----------------------------------------------
+let phase = 0;
+function injectSource() {
+  const cy = N / 2;
+  // Broad Gaussian envelope in y so it acts like a plane wave
+  const sigY = N * 0.35;
+  for (let j = spongeW; j < N - spongeW; j++) {
+    const dy = j - cy;
+    const env = Math.exp(-dy * dy / (2 * sigY * sigY));
+    const idx = j * N + srcX;
+    psiR[idx] += srcAmp * env * Math.cos(phase);
+    psiI[idx] += srcAmp * env * Math.sin(phase);
+  }
+  phase += k0 * dx;
+}
+
+// --- ADI evolution --------------------------------------------------
+function evolveADI() {
+  const beta = hbar * dt / (4.0 * mass * dx * dx);
+
+  // Step 1: x-implicit, y-explicit
+  for (let j = 1; j < N - 1; j++) {
+    for (let i = 1; i < N - 1; i++) {
+      const idx = j * N + i;
+      const idxJm = (j - 1) * N + i;
+      const idxJp = (j + 1) * N + i;
+      const gamma_half = V[idx] * dt / (4.0 * hbar);
+
+      const dyR = psiR[idxJm] - 2 * psiR[idx] + psiR[idxJp];
+      const dyI = psiI[idxJm] - 2 * psiI[idx] + psiI[idxJp];
+
+      let rhR = psiR[idx] - beta * dyI;
+      let rhI = psiI[idx] + beta * dyR;
+      rhR += gamma_half * psiI[idx];
+      rhI -= gamma_half * psiR[idx];
+
+      dR[i] = rhR;
+      dI[i] = rhI;
+    }
+    dR[0] = 0; dI[0] = 0;
+    dR[N - 1] = 0; dI[N - 1] = 0;
+
+    solveTridiag(N, 0, -beta, 1, 2 * beta, 0, -beta, dR, dI, xR, xI);
+    for (let i = 0; i < N; i++) {
+      tmpR[j * N + i] = xR[i];
+      tmpI[j * N + i] = xI[i];
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    tmpR[i] = 0; tmpI[i] = 0;
+    tmpR[(N - 1) * N + i] = 0; tmpI[(N - 1) * N + i] = 0;
+  }
+
+  // Step 2: y-implicit
+  for (let i = 1; i < N - 1; i++) {
+    for (let j = 0; j < N; j++) {
+      dR[j] = tmpR[j * N + i];
+      dI[j] = tmpI[j * N + i];
+    }
+    solveTridiagVar(N, i, beta, dR, dI, xR, xI);
+    for (let j = 0; j < N; j++) {
+      psiR[j * N + i] = xR[j];
+      psiI[j * N + i] = xI[j];
+    }
+  }
+  for (let j = 0; j < N; j++) {
+    psiR[j * N] = 0; psiI[j * N] = 0;
+    psiR[j * N + N - 1] = 0; psiI[j * N + N - 1] = 0;
+  }
+
+  // Apply absorbing sponge
+  for (let idx = 0; idx < N * N; idx++) {
+    psiR[idx] *= damp[idx];
+    psiI[idx] *= damp[idx];
+  }
+}
+
+function solveTridiag(n, aRe, aIm, bRe, bIm, cRe, cIm, dRe, dIm, xRe, xIm) {
+  let d = bRe * bRe + bIm * bIm;
+  thomasCpR[0] = (cRe * bRe + cIm * bIm) / d;
+  thomasCpI[0] = (cIm * bRe - cRe * bIm) / d;
+  thomasDpR[0] = (dRe[0] * bRe + dIm[0] * bIm) / d;
+  thomasDpI[0] = (dIm[0] * bRe - dRe[0] * bIm) / d;
+
+  for (let i = 1; i < n; i++) {
+    const mR = aRe * thomasCpR[i-1] - aIm * thomasCpI[i-1];
+    const mI = aRe * thomasCpI[i-1] + aIm * thomasCpR[i-1];
+    const denomR = bRe - mR;
+    const denomI = bIm - mI;
+    d = denomR * denomR + denomI * denomI;
+    if (i < n - 1) {
+      thomasCpR[i] = (cRe * denomR + cIm * denomI) / d;
+      thomasCpI[i] = (cIm * denomR - cRe * denomI) / d;
+    }
+    const numR = dRe[i] - (aRe * thomasDpR[i-1] - aIm * thomasDpI[i-1]);
+    const numI = dIm[i] - (aRe * thomasDpI[i-1] + aIm * thomasDpR[i-1]);
+    thomasDpR[i] = (numR * denomR + numI * denomI) / d;
+    thomasDpI[i] = (numI * denomR - numR * denomI) / d;
+  }
+  xRe[n-1] = thomasDpR[n-1]; xIm[n-1] = thomasDpI[n-1];
+  for (let i = n - 2; i >= 0; i--) {
+    xRe[i] = thomasDpR[i] - (thomasCpR[i] * xRe[i+1] - thomasCpI[i] * xIm[i+1]);
+    xIm[i] = thomasDpI[i] - (thomasCpR[i] * xIm[i+1] + thomasCpI[i] * xRe[i+1]);
+  }
+}
+
+const tvCpR = new Float64Array(N);
+const tvCpI = new Float64Array(N);
+const tvDpR = new Float64Array(N);
+const tvDpI = new Float64Array(N);
+
+function solveTridiagVar(n, col, beta, dRe, dIm, xRe, xIm) {
+  const aRe = 0, aIm = -beta;
+  const cRe = 0, cIm = -beta;
+
+  let gamma_half = V[col] * dt / (4.0 * hbar);
+  let bRe = 1, bIm = 2 * beta + gamma_half;
+  let d = bRe * bRe + bIm * bIm;
+  tvCpR[0] = (cRe * bRe + cIm * bIm) / d;
+  tvCpI[0] = (cIm * bRe - cRe * bIm) / d;
+  tvDpR[0] = (dRe[0] * bRe + dIm[0] * bIm) / d;
+  tvDpI[0] = (dIm[0] * bRe - dRe[0] * bIm) / d;
+
+  for (let j = 1; j < n; j++) {
+    gamma_half = V[j * N + col] * dt / (4.0 * hbar);
+    bRe = 1; bIm = 2 * beta + gamma_half;
+    const mR = aRe * tvCpR[j-1] - aIm * tvCpI[j-1];
+    const mI = aRe * tvCpI[j-1] + aIm * tvCpR[j-1];
+    const denomR = bRe - mR;
+    const denomI = bIm - mI;
+    d = denomR * denomR + denomI * denomI;
+    if (j < n - 1) {
+      tvCpR[j] = (cRe * denomR + cIm * denomI) / d;
+      tvCpI[j] = (cIm * denomR - cRe * denomI) / d;
+    }
+    const numR = dRe[j] - (aRe * tvDpR[j-1] - aIm * tvDpI[j-1]);
+    const numI = dIm[j] - (aRe * tvDpI[j-1] + aIm * tvDpR[j-1]);
+    tvDpR[j] = (numR * denomR + numI * denomI) / d;
+    tvDpI[j] = (numI * denomR - numR * denomI) / d;
+  }
+  xRe[n-1] = tvDpR[n-1]; xIm[n-1] = tvDpI[n-1];
+  for (let j = n - 2; j >= 0; j--) {
+    xRe[j] = tvDpR[j] - (tvCpR[j] * xRe[j+1] - tvCpI[j] * xIm[j+1]);
+    xIm[j] = tvDpI[j] - (tvCpR[j] * xIm[j+1] + tvCpI[j] * xRe[j+1]);
+  }
+}
+
+// --- Rendering ------------------------------------------------------
+function hue2rgb(p, q, t) {
+  if (t < 0) t += 1;
+  if (t > 1) t -= 1;
+  if (t < 1/6) return p + (q - p) * 6 * t;
+  if (t < 1/2) return q;
+  if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+  return p;
+}
+
+function render() {
+  const data = imgData.data;
+  const bright = 600;
+
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const idx = j * N + i;
+      const p4 = idx * 4;
+
+      // Barrier pixels
+      if (V[idx] > 1) {
+        // Sleek metallic barrier
+        const glow = 40;
+        // Check if adjacent to slit opening for edge glow
+        let edgeDist = 999;
+        for (let dj = -2; dj <= 2; dj++) {
+          const nj = j + dj;
+          if (nj >= 0 && nj < N) {
+            if (V[nj * N + i] <= 1) {
+              edgeDist = Math.min(edgeDist, Math.abs(dj));
+            }
+          }
+        }
+        if (edgeDist <= 2) {
+          // Slit edge glow
+          const eg = (3 - edgeDist) * 30;
+          data[p4]     = eg * 0.3;
+          data[p4 + 1] = eg * 0.6;
+          data[p4 + 2] = eg;
+          data[p4 + 3] = 255;
+        } else {
+          data[p4]     = glow * 0.15;
+          data[p4 + 1] = glow * 0.15;
+          data[p4 + 2] = glow * 0.2;
+          data[p4 + 3] = 255;
+        }
+        continue;
+      }
+
+      const prob = psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx];
+      const amp = Math.min(1, prob * bright);
+
+      if (amp < 0.001) {
+        data[p4] = 0; data[p4+1] = 0; data[p4+2] = 0; data[p4+3] = 255;
+        continue;
+      }
+
+      // Phase -> hue
+      let ph = Math.atan2(psiI[idx], psiR[idx]);
+      if (ph < 0) ph += 6.283185307;
+      const hue = ph / 6.283185307;
+
+      // HSL to RGB with high saturation, luminance from amplitude
+      const lum = amp * 0.55;
+      const sat = 0.95;
+      const q_ = lum < 0.5 ? lum * (1 + sat) : lum + sat - lum * sat;
+      const p_ = 2 * lum - q_;
+
+      let r = hue2rgb(p_, q_, hue + 1/3);
+      let g = hue2rgb(p_, q_, hue);
+      let b = hue2rgb(p_, q_, hue - 1/3);
+
+      // Boost with additive glow for high amplitude
+      const glow = amp * amp * 80;
+      data[p4]     = Math.min(255, r * 255 + glow);
+      data[p4 + 1] = Math.min(255, g * 255 + glow * 0.9);
+      data[p4 + 2] = Math.min(255, b * 255 + glow * 0.7);
+      data[p4 + 3] = 255;
+    }
+  }
+
+  // --- Detection screen overlay (right side) ---
+  // Accumulate probability at detector
+  for (let j = 0; j < N; j++) {
+    const idx = j * N + detectorX;
+    const prob = psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx];
+    detectorAccum[j] += prob;
+    if (detectorAccum[j] > detectorMax) detectorMax = detectorAccum[j];
+  }
+
+  // Draw detector strip (thin vertical bar)
+  if (detectorMax > 1e-12) {
+    const barW = 6;
+    for (let j = spongeW; j < N - spongeW; j++) {
+      const v = detectorAccum[j] / detectorMax;
+      const intensity = Math.pow(v, 0.6) * 255;
+      for (let di = 0; di < barW; di++) {
+        const i = detectorX + 8 + di;
+        if (i < N) {
+          const p4 = (j * N + i) * 4;
+          data[p4]     = Math.min(255, intensity * 0.4);
+          data[p4 + 1] = Math.min(255, intensity * 0.85);
+          data[p4 + 2] = Math.min(255, intensity);
+          data[p4 + 3] = 255;
+        }
+      }
+    }
+  }
+
+  offCtx.putImageData(imgData, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(offCanvas, 0, 0, canvas.width, canvas.height);
+}
+
+// --- Main loop ------------------------------------------------------
+let stepCount = 0;
+const stepsPerFrame = 3;
+
+function mainLoop() {
+  for (let s = 0; s < stepsPerFrame; s++) {
+    injectSource();
+    evolveADI();
+    stepCount++;
+  }
+  render();
+  requestAnimationFrame(mainLoop);
+}
+
+// --- Init -----------------------------------------------------------
+initCanvas();
+buildPotential();
+mainLoop();
+
+window.addEventListener('resize', () => {
+  initCanvas();
+});
+</script>
+</body>
+</html>
