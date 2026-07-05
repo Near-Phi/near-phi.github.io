@@ -3,62 +3,58 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Coherence — Neural Entrainment / Binaural Beats</title>
+<title>Coherence — Gateway / Hemi-Sync Entrainment</title>
 <style>
   :root{
     --bg:#06080d; --panel:rgba(255,255,255,.04); --line:rgba(255,255,255,.10);
-    --txt:#c3ccd9; --hi:#f0f5fb; --mute:#79footer; --mute:#7a8494;
-    --a:#6ee7ff; --b:#a78bfa;
+    --txt:#c3ccd9; --hi:#f0f5fb; --mute:#7a8494; --a:#6ee7ff; --b:#a78bfa;
     --ui:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
     --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
-  body{font-family:var(--ui);background:var(--bg);color:var(--txt);
-    min-height:100%;display:flex;flex-direction:column;align-items:center;
-    padding:28px 18px 60px;overflow-x:hidden}
+  body{font-family:var(--ui);background:var(--bg);color:var(--txt);min-height:100%;
+    display:flex;flex-direction:column;align-items:center;padding:26px 16px 60px;overflow-x:hidden}
   .stage{position:fixed;inset:0;z-index:0;pointer-events:none}
   canvas{width:100%;height:100%;display:block}
-  .wrap{position:relative;z-index:1;width:100%;max-width:560px}
-  header{text-align:center;margin-bottom:26px}
+  .wrap{position:relative;z-index:1;width:100%;max-width:600px}
+  header{text-align:center;margin-bottom:22px}
   .kick{font:600 11px/1 var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--a);opacity:.85}
-  h1{font-size:30px;color:var(--hi);font-weight:700;letter-spacing:-.02em;margin:12px 0 8px}
-  .sub{color:var(--mute);font-size:14.5px;max-width:440px;margin:0 auto}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;
-    padding:22px;backdrop-filter:blur(12px);margin-top:22px}
-  .presets{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
-  .preset{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;
-    padding:12px 6px;text-align:center;cursor:pointer;transition:.16s;color:var(--txt)}
-  .preset:hover{border-color:rgba(110,231,255,.5);background:rgba(110,231,255,.06)}
-  .preset.on{border-color:var(--a);background:rgba(110,231,255,.12);box-shadow:0 0 0 1px var(--a) inset}
-  .preset .band{font:700 13px var(--ui);color:var(--hi)}
-  .preset .hz{font:600 11px var(--mono);color:var(--a);margin-top:3px}
-  .preset .use{font-size:10.5px;color:var(--mute);margin-top:4px;line-height:1.25}
-  .readout{display:flex;justify-content:center;align-items:baseline;gap:8px;margin:26px 0 8px}
-  .readout .big{font:700 46px var(--mono);color:var(--hi);letter-spacing:-.02em}
-  .readout .unit{font:600 15px var(--mono);color:var(--a)}
-  .desc{text-align:center;color:var(--mute);font-size:13.5px;min-height:20px;margin-bottom:20px}
+  h1{font-size:29px;color:var(--hi);font-weight:700;letter-spacing:-.02em;margin:12px 0 8px}
+  .sub{color:var(--mute);font-size:14px;max-width:470px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:22px;backdrop-filter:blur(12px);margin-top:20px}
+  h2{font:700 11px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin-bottom:14px}
+  .focus{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .fbtn{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:13px;
+    padding:13px 5px;text-align:center;cursor:pointer;transition:.16s;color:var(--txt)}
+  .fbtn:hover{border-color:rgba(110,231,255,.5);background:rgba(110,231,255,.06)}
+  .fbtn.on{border-color:var(--a);background:rgba(110,231,255,.12);box-shadow:0 0 0 1px var(--a) inset}
+  .fbtn .n{font:700 15px var(--ui);color:var(--hi)}
+  .fbtn .s{font-size:10px;color:var(--mute);margin-top:4px;line-height:1.25}
+  .state{text-align:center;margin:22px 0 6px}
+  .phase{font:600 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--a);min-height:16px}
+  .readout{display:flex;justify-content:center;align-items:baseline;gap:7px;margin-top:8px}
+  .readout .big{font:700 44px var(--mono);color:var(--hi);letter-spacing:-.02em}
+  .readout .unit{font:600 14px var(--mono);color:var(--a)}
+  .desc{text-align:center;color:var(--mute);font-size:13px;min-height:18px;margin:6px 0 4px}
   .ctrl{margin:16px 0}
-  .ctrl label{display:flex;justify-content:space-between;font:600 12px var(--mono);
-    color:var(--mute);letter-spacing:.04em;margin-bottom:8px;text-transform:uppercase}
+  .ctrl label{display:flex;justify-content:space-between;font:600 11px var(--mono);color:var(--mute);letter-spacing:.04em;margin-bottom:8px;text-transform:uppercase}
   .ctrl label b{color:var(--hi);font-family:var(--mono)}
-  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;
-    background:linear-gradient(90deg,var(--a),var(--b));outline:none;cursor:pointer}
-  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;
-    background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer}
-  input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:0;cursor:pointer}
-  .toggles{display:flex;gap:10px;margin:18px 0 4px}
-  .tg{flex:1;text-align:center;padding:10px;border:1px solid var(--line);border-radius:12px;
-    font:600 12.5px var(--ui);color:var(--mute);cursor:pointer;transition:.16s}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;background:linear-gradient(90deg,var(--a),var(--b));outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+  input[type=range]::-moz-range-thumb{width:19px;height:19px;border-radius:50%;background:#fff;border:0}
+  .toggles{display:flex;gap:9px;margin:16px 0 2px}
+  .tg{flex:1;text-align:center;padding:10px;border:1px solid var(--line);border-radius:12px;font:600 12px var(--ui);color:var(--mute);cursor:pointer;transition:.16s}
   .tg.on{color:var(--hi);border-color:var(--b);background:rgba(167,139,250,.1)}
-  .play{width:100%;margin-top:22px;padding:17px;border:0;border-radius:14px;cursor:pointer;
-    font:700 17px var(--ui);color:#04121a;background:linear-gradient(90deg,var(--a),var(--b));
-    transition:.16s;letter-spacing:.01em}
+  .play{width:100%;margin-top:20px;padding:17px;border:0;border-radius:14px;cursor:pointer;font:700 17px var(--ui);color:#04121a;background:linear-gradient(90deg,var(--a),var(--b));transition:.16s}
   .play:hover{filter:brightness(1.07)}
   .play.playing{background:rgba(255,255,255,.08);color:var(--hi);border:1px solid var(--line)}
-  .note{text-align:center;color:var(--mute);font-size:12px;margin-top:16px;line-height:1.5}
+  .note{text-align:center;color:var(--mute);font-size:11.5px;margin-top:14px;line-height:1.5}
   .warn{color:var(--b)}
-  footer{position:relative;z-index:1;color:var(--mute);font-size:12.5px;text-align:center;margin-top:34px;max-width:480px}
+  .adv{margin-top:8px}
+  .adv summary{font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--mute);cursor:pointer;list-style:none;padding:6px 0}
+  .adv summary::-webkit-details-marker{display:none}
+  footer{position:relative;z-index:1;color:var(--mute);font-size:12px;text-align:center;margin-top:30px;max-width:500px;line-height:1.6}
   a{color:var(--a);text-decoration:none}
 </style>
 </head>
@@ -66,171 +62,198 @@
 <div class="stage"><canvas id="viz"></canvas></div>
 <div class="wrap">
   <header>
-    <div class="kick">Coherence</div>
-    <h1>Neural Entrainment</h1>
-    <p class="sub">Binaural beats generated live in your browser. Two pure tones, one per ear; the frequency difference is the beat your brain follows. Headphones required — the effect only exists in stereo.</p>
+    <div class="kick">Coherence · Gateway Engine</div>
+    <h1>Hemi-Sync Focus Levels</h1>
+    <p class="sub">A faithful reconstruction of the Monroe Institute Gateway method: each session opens with resonant tuning, then glides a stack of binaural beats down into the target brainwave band under a breathing surf bed. Headphones required — binaural beats only exist in stereo.</p>
   </header>
 
   <div class="card">
-    <div class="presets" id="presets"></div>
+    <h2>Choose a Focus level</h2>
+    <div class="focus" id="focus"></div>
 
-    <div class="readout"><span class="big" id="beatVal">10.0</span><span class="unit">Hz beat</span></div>
-    <div class="desc" id="desc">Alpha — relaxed, alert focus</div>
-
-    <div class="ctrl">
-      <label>Beat frequency <b><span id="beatL">10.0</span> Hz</b></label>
-      <input type="range" id="beat" min="0.5" max="40" step="0.1" value="10">
-    </div>
-    <div class="ctrl">
-      <label>Carrier tone <b><span id="carL">200</span> Hz</b></label>
-      <input type="range" id="carrier" min="100" max="400" step="1" value="200">
-    </div>
-    <div class="ctrl">
-      <label>Volume <b><span id="volL">45</span>%</b></label>
-      <input type="range" id="vol" min="0" max="100" step="1" value="45">
+    <div class="state">
+      <div class="phase" id="phase">Ready</div>
+      <div class="readout"><span class="big" id="beatVal">10.0</span><span class="unit">Hz beat</span></div>
+      <div class="desc" id="desc">Select a level and begin</div>
     </div>
 
-    <div class="toggles">
-      <div class="tg on" id="tgNoise">Pink-noise bed</div>
-      <div class="tg" id="tgIso">Isochronic pulse</div>
-    </div>
+    <details class="adv">
+      <summary>Manual controls</summary>
+      <div class="ctrl"><label>Carrier tone <b><span id="carL">120</span> Hz</b></label><input type="range" id="carrier" min="90" max="400" step="1" value="120"></div>
+      <div class="ctrl"><label>Volume <b><span id="volL">45</span>%</b></label><input type="range" id="vol" min="0" max="100" step="1" value="45"></div>
+      <div class="toggles">
+        <div class="tg on" id="tgSurf">Surf bed</div>
+        <div class="tg on" id="tgTune">Resonant tuning open</div>
+        <div class="tg on" id="tgStack">3-pair stack</div>
+      </div>
+    </details>
 
     <button class="play" id="play">▶  Begin session</button>
-    <div class="note"><span class="warn">Wear headphones.</span> Start low; let it settle for a few minutes. Not a medical device — general wellness / focus audio.</div>
+    <div class="note"><span class="warn">Wear headphones.</span> General wellness / meditation audio — not a medical device. Do not use while driving.</div>
   </div>
 
   <footer>
-    Built by Damon — <a href="mailto:iamagathodamon@gmail.com">iamagathodamon@gmail.com</a>. Runs entirely in your browser; no signup, no upload, nothing leaves your device.
+    Reconstructed from the documented Hemi-Sync method and the CIA-declassified "Analysis and Assessment of Gateway Process" (1983). Exact per-Focus frequencies are Monroe-proprietary; these follow the documented brainwave bands and CIA resonance anchors (4–7.5 Hz).<br>
+    Built by Damon — <a href="mailto:iamagathodamon@gmail.com">iamagathodamon@gmail.com</a>. Runs entirely in your browser; nothing is uploaded.
   </footer>
 </div>
 
 <script>
-const PRESETS = [
-  {band:"Delta", hz:2.5,  use:"Deep sleep",     desc:"Delta — deep sleep, recovery",           car:120},
-  {band:"Theta", hz:6,    use:"Meditate",       desc:"Theta — meditation, creativity, calm",   car:150},
-  {band:"Alpha", hz:10,   use:"Focus",          desc:"Alpha — relaxed, alert focus",           car:200},
-  {band:"Beta",  hz:18,   use:"Alert",          desc:"Beta — active thinking, alertness",      car:220},
-  {band:"Gamma", hz:40,   use:"Coherence",      desc:"Gamma — peak binding, 40Hz coherence",   car:250},
+// Focus programs — documented band targets + CIA anchors (7–7.5 / 4–7 Hz window).
+// glide: seconds to ride the primary beat from alpha(10) down to target.
+const FOCUS = [
+  {n:"3",  s:"Sync",      target:8,  glide:150, car:200, desc:"Focus 3 — hemispheres syncing, settling into alpha"},
+  {n:"10", s:"Body asleep", target:4, glide:240, car:120, desc:"Focus 10 — mind awake, body asleep (alpha→theta, settles ~4 Hz)"},
+  {n:"12", s:"Expanded",  target:5,  glide:240, car:110, desc:"Focus 12 — expanded awareness, theta"},
+  {n:"15", s:"No time",   target:4,  glide:300, car:100, desc:"Focus 15 — the 'no time' state, deep theta with alpha layer"},
+  {n:"21", s:"Bridge",    target:2,  glide:360, car:100, desc:"Focus 21 — bridge state, theta descending toward delta"},
 ];
+let sel = FOCUS[1];
 
-let ctx=null, nodes=null, playing=false;
 const el = id => document.getElementById(id);
-const beat=el('beat'), carrier=el('carrier'), vol=el('vol');
+const carrier=el('carrier'), vol=el('vol');
+let surfOn=true, tuneOn=true, stackOn=true;
 
-// build preset buttons
-const pc = el('presets');
-PRESETS.forEach((p,i)=>{
+const fc = el('focus');
+FOCUS.forEach((f,i)=>{
   const d=document.createElement('div');
-  d.className='preset'+(p.band==='Alpha'?' on':'');
-  d.innerHTML=`<div class="band">${p.band}</div><div class="hz">${p.hz} Hz</div><div class="use">${p.use}</div>`;
-  d.onclick=()=>{
-    document.querySelectorAll('.preset').forEach(x=>x.classList.remove('on'));
-    d.classList.add('on');
-    beat.value=p.hz; carrier.value=p.car;
-    el('desc').textContent=p.desc;
-    sync(); apply();
-  };
-  pc.appendChild(d);
+  d.className='fbtn'+(f===sel?' on':'');
+  d.innerHTML=`<div class="n">${f.n}</div><div class="s">${f.s}</div>`;
+  d.onclick=()=>{ document.querySelectorAll('.fbtn').forEach(x=>x.classList.remove('on'));
+    d.classList.add('on'); sel=f; carrier.value=f.car; el('carL').textContent=f.car;
+    el('desc').textContent=f.desc; if(playing){stop();start();} };
+  fc.appendChild(d);
 });
+el('desc').textContent=sel.desc;
 
-let noiseOn=true, isoOn=false;
-el('tgNoise').onclick=e=>{noiseOn=!noiseOn;e.target.classList.toggle('on',noiseOn);apply();};
-el('tgIso').onclick=e=>{isoOn=!isoOn;e.target.classList.toggle('on',isoOn);apply();};
+el('tgSurf').onclick=e=>{surfOn=!surfOn;e.target.classList.toggle('on',surfOn);apply();};
+el('tgTune').onclick=e=>{tuneOn=!tuneOn;e.target.classList.toggle('on',tuneOn);};
+el('tgStack').onclick=e=>{stackOn=!stackOn;e.target.classList.toggle('on',stackOn);if(playing){stop();start();}};
+carrier.addEventListener('input',()=>{el('carL').textContent=carrier.value;apply();});
+vol.addEventListener('input',()=>{el('volL').textContent=vol.value;apply();});
 
-function sync(){
-  el('beatVal').textContent=parseFloat(beat.value).toFixed(1);
-  el('beatL').textContent=parseFloat(beat.value).toFixed(1);
-  el('carL').textContent=carrier.value;
-  el('volL').textContent=vol.value;
-}
-[beat,carrier,vol].forEach(s=>s.addEventListener('input',()=>{sync();apply();
-  // clear preset highlight when manually tuned
-  if(s!==vol){document.querySelectorAll('.preset').forEach(x=>x.classList.remove('on'));el('desc').textContent='Custom tuning';}
-}));
-sync();
+let ctx=null, N=null, playing=false, startT=0, raf=0;
 
-function makePinkNoise(ac){
-  const buf=ac.createBuffer(1, ac.sampleRate*4, ac.sampleRate);
-  const out=buf.getChannelData(0);
+function pinkNoise(ac){
+  const buf=ac.createBuffer(1, ac.sampleRate*4, ac.sampleRate), o=buf.getChannelData(0);
   let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
-  for(let i=0;i<out.length;i++){
-    const w=Math.random()*2-1;
-    b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759; b2=0.96900*b2+w*0.1538520;
-    b3=0.86650*b3+w*0.3104856; b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
-    out[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
-  }
-  const src=ac.createBufferSource(); src.buffer=buf; src.loop=true; return src;
+  for(let i=0;i<o.length;i++){const w=Math.random()*2-1;
+    b0=0.99886*b0+w*0.0555179;b1=0.99332*b1+w*0.0750759;b2=0.96900*b2+w*0.1538520;
+    b3=0.86650*b3+w*0.3104856;b4=0.55000*b4+w*0.5329522;b5=-0.7616*b5-w*0.0168980;
+    o[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11;b6=w*0.115926;}
+  const s=ac.createBufferSource();s.buffer=buf;s.loop=true;return s;
+}
+
+// one binaural pair -> returns the right-ear osc (the one we glide)
+function makePair(ac, car, beat, gainNode){
+  const l=ac.createOscillator(), r=ac.createOscillator();
+  l.type='sine'; r.type='sine'; l.frequency.value=car; r.frequency.value=car+beat;
+  const pl=ac.createStereoPanner(), pr=ac.createStereoPanner(); pl.pan.value=-1; pr.pan.value=1;
+  l.connect(pl); r.connect(pr); pl.connect(gainNode); pr.connect(gainNode);
+  l.start(); r.start();
+  return {l,r,car};
 }
 
 function start(){
   ctx=new (window.AudioContext||window.webkitAudioContext)();
-  const car=+carrier.value, bt=+beat.value;
-  const oscL=ctx.createOscillator(), oscR=ctx.createOscillator();
-  oscL.frequency.value=car; oscR.frequency.value=car+bt;
-  const panL=ctx.createStereoPanner(), panR=ctx.createStereoPanner();
-  panL.pan.value=-1; panR.pan.value=1;
-  const toneGain=ctx.createGain(); toneGain.gain.value=0;
-  // isochronic amplitude LFO (optional)
-  const iso=ctx.createGain(); iso.gain.value=1;
-  const lfo=ctx.createOscillator(); lfo.frequency.value=bt;
-  const lfoGain=ctx.createGain(); lfoGain.gain.value=0.5; lfo.type='sine';
-  lfo.connect(lfoGain); lfoGain.connect(iso.gain);
-  oscL.connect(panL); oscR.connect(panR);
-  panL.connect(iso); panR.connect(iso); iso.connect(toneGain);
-  // noise bed
-  const noiseGain=ctx.createGain(); noiseGain.gain.value=0;
-  const noise=makePinkNoise(ctx);
-  const nf=ctx.createBiquadFilter(); nf.type='lowpass'; nf.frequency.value=1200;
-  noise.connect(nf); nf.connect(noiseGain);
-  const master=ctx.createGain(); master.gain.value=1;
-  toneGain.connect(master); noiseGain.connect(master); master.connect(ctx.destination);
-  oscL.start(); oscR.start(); lfo.start(); noise.start();
-  nodes={oscL,oscR,toneGain,noiseGain,iso,lfo,lfoGain,master,ctx};
+  const t=ctx.currentTime, car=+carrier.value;
+  const master=ctx.createGain(); master.gain.value=1; master.connect(ctx.destination);
+
+  // --- beat stack ---
+  const toneGain=ctx.createGain(); toneGain.gain.value=0; toneGain.connect(master);
+  const beat0=10; // always open at alpha, then glide down (Hemi-Sync ramp)
+  // primary + reinforcing pairs (designer mix): primary, +3, +anchor 8Hz
+  const beats = stackOn ? [sel.target, sel.target+3, 8] : [sel.target];
+  const pairs = beats.map((b,i)=> makePair(ctx, car + i*0.7, beat0, toneGain));
+  // glide every pair's right-ear osc from beat0 down to its own target beat
+  const glideEnd = t + (tuneOn?120:0) + sel.glide;
+  pairs.forEach((p,i)=>{
+    const tgt = beats[i];
+    p.r.frequency.setValueAtTime(p.car + beat0, t + (tuneOn?120:0));
+    p.r.frequency.linearRampToValueAtTime(p.car + tgt, glideEnd);
+  });
+
+  // --- surf bed (pink noise, breathing) ---
+  const surfGain=ctx.createGain(); surfGain.gain.value=0; surfGain.connect(master);
+  const noise=pinkNoise(ctx);
+  const nf=ctx.createBiquadFilter(); nf.type='lowpass'; nf.frequency.value=1000;
+  noise.connect(nf); nf.connect(surfGain);
+  const surfLFO=ctx.createOscillator(); surfLFO.frequency.value=0.1; // ~10s breath
+  const surfLFOg=ctx.createGain(); surfLFOg.gain.value=0.08;
+  surfLFO.connect(surfLFOg); surfLFOg.connect(surfGain.gain); surfLFO.start();
+  noise.start();
+
+  // --- resonant tuning hum (first 120s) ---
+  let humOsc=null, humGain=null;
+  if(tuneOn){
+    humGain=ctx.createGain(); humGain.gain.value=0; humGain.connect(master);
+    humOsc=ctx.createOscillator(); humOsc.type='sine'; humOsc.frequency.value=118; // low ohm-like
+    humOsc.connect(humGain); humOsc.start();
+  }
+
+  N={master,toneGain,pairs,surfGain,humOsc,humGain,surfLFO,noise};
+  startT=t;
   apply(true);
-  window._nodes=nodes;
 }
+
 function apply(ramp){
-  if(!ctx||!nodes)return;
+  if(!ctx||!N)return;
   const t=ctx.currentTime, v=(+vol.value/100)*0.5;
-  const bt=+beat.value, car=+carrier.value;
-  nodes.oscL.frequency.setTargetAtTime(car,t,.05);
-  nodes.oscR.frequency.setTargetAtTime(car+bt,t,.05);
-  nodes.lfo.frequency.setTargetAtTime(bt,t,.05);
-  nodes.lfoGain.gain.setTargetAtTime(isoOn?0.5:0,t,.05);
-  nodes.iso.gain.setTargetAtTime(isoOn?0.5:1,t,.05);
-  nodes.toneGain.gain.setTargetAtTime(v, t, ramp?1.2:.1);
-  nodes.noiseGain.gain.setTargetAtTime(noiseOn?v*0.35:0, t, ramp?1.2:.1);
-  vizBeat=bt;
+  N.toneGain.gain.setTargetAtTime(v/(N.pairs.length), t, ramp?1.0:.1);
+  N.surfGain.gain.setTargetAtTime(surfOn?v*0.3:0, t, ramp?1.0:.1);
+  if(N.humGain){
+    // hum present only during first 120s tuning window, then fades
+    const dt = t - startT;
+    N.humGain.gain.cancelScheduledValues(t);
+    N.humGain.gain.setValueAtTime(N.humGain.gain.value, t);
+    if(dt < 118 && tuneOn){ N.humGain.gain.linearRampToValueAtTime(v*0.5, t+2);
+      N.humGain.gain.setValueAtTime(v*0.5, startT+110>t?startT+110:t);
+      N.humGain.gain.linearRampToValueAtTime(0, startT+122); }
+    else N.humGain.gain.setTargetAtTime(0,t,1.0);
+  }
 }
 function stop(){
-  if(!ctx)return;
-  const t=ctx.currentTime;
-  nodes.toneGain.gain.setTargetAtTime(0,t,.4);
-  nodes.noiseGain.gain.setTargetAtTime(0,t,.4);
-  const c=ctx; setTimeout(()=>{try{c.close()}catch(e){}},900);
-  ctx=null; nodes=null;
+  if(!ctx)return; const t=ctx.currentTime, c=ctx;
+  N.toneGain.gain.setTargetAtTime(0,t,.5); N.surfGain.gain.setTargetAtTime(0,t,.5);
+  if(N.humGain)N.humGain.gain.setTargetAtTime(0,t,.5);
+  setTimeout(()=>{try{c.close()}catch(e){}},1100);
+  ctx=null; N=null;
 }
+
 el('play').onclick=function(){
   playing=!playing;
   this.classList.toggle('playing',playing);
   this.textContent=playing?'■  End session':'▶  Begin session';
-  if(playing) start(); else stop();
+  if(playing){start();loop();} else {playing=false;el('phase').textContent='Ready';el('beatVal').textContent='10.0';cancelAnimationFrame(raf);}
 };
 
-// ambient visualization
+// live phase + beat readout
+function loop(){
+  if(!ctx||!N){return;}
+  const dt=ctx.currentTime-startT;
+  let phase, beat;
+  const tuneLen=tuneOn?120:0;
+  if(dt<tuneLen){ phase="Resonant tuning"; beat=10; }
+  else if(dt<tuneLen+sel.glide){ phase="Descending → Focus "+sel.n;
+    const p=(dt-tuneLen)/sel.glide; beat=10+(sel.target-10)*p; }
+  else { phase="Holding — Focus "+sel.n; beat=sel.target; }
+  el('phase').textContent=phase; el('beatVal').textContent=beat.toFixed(1);
+  vizBeat=beat;
+  raf=requestAnimationFrame(loop);
+}
+
+// ambient viz
 const cv=el('viz'), g=cv.getContext('2d'); let W,H,vizBeat=10,ph=0;
 function resize(){W=cv.width=innerWidth*devicePixelRatio;H=cv.height=innerHeight*devicePixelRatio;}
 addEventListener('resize',resize); resize();
 function draw(){
   g.clearRect(0,0,W,H);
-  const cx=W/2, cy=H*0.42;
-  const pulse=playing?(Math.sin(ph)*0.5+0.5):0.15;
-  ph+=(vizBeat/60)*0.14;
+  const cx=W/2, cy=H*0.40, pulse=playing?(Math.sin(ph)*0.5+0.5):0.15;
+  ph+=(vizBeat/60)*0.13;
   for(let i=6;i>=0;i--){
-    const r=(Math.min(W,H)*0.13)*(i+1)*(0.7+pulse*0.5);
+    const r=(Math.min(W,H)*0.12)*(i+1)*(0.7+pulse*0.5);
     g.beginPath(); g.arc(cx,cy,r,0,Math.PI*2);
-    const a=(playing?0.10:0.04)*(1-i/8);
-    g.strokeStyle=`rgba(${110+i*8},${200-i*10},255,${a})`;
+    g.strokeStyle=`rgba(${110+i*8},${200-i*10},255,${(playing?0.10:0.04)*(1-i/8)})`;
     g.lineWidth=devicePixelRatio*1.2; g.stroke();
   }
   requestAnimationFrame(draw);
