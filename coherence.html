@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Coherence — Neural Entrainment / Binaural Beats</title>
+<style>
+  :root{
+    --bg:#06080d; --panel:rgba(255,255,255,.04); --line:rgba(255,255,255,.10);
+    --txt:#c3ccd9; --hi:#f0f5fb; --mute:#79footer; --mute:#7a8494;
+    --a:#6ee7ff; --b:#a78bfa;
+    --ui:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:var(--ui);background:var(--bg);color:var(--txt);
+    min-height:100%;display:flex;flex-direction:column;align-items:center;
+    padding:28px 18px 60px;overflow-x:hidden}
+  .stage{position:fixed;inset:0;z-index:0;pointer-events:none}
+  canvas{width:100%;height:100%;display:block}
+  .wrap{position:relative;z-index:1;width:100%;max-width:560px}
+  header{text-align:center;margin-bottom:26px}
+  .kick{font:600 11px/1 var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--a);opacity:.85}
+  h1{font-size:30px;color:var(--hi);font-weight:700;letter-spacing:-.02em;margin:12px 0 8px}
+  .sub{color:var(--mute);font-size:14.5px;max-width:440px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:20px;
+    padding:22px;backdrop-filter:blur(12px);margin-top:22px}
+  .presets{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .preset{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:12px;
+    padding:12px 6px;text-align:center;cursor:pointer;transition:.16s;color:var(--txt)}
+  .preset:hover{border-color:rgba(110,231,255,.5);background:rgba(110,231,255,.06)}
+  .preset.on{border-color:var(--a);background:rgba(110,231,255,.12);box-shadow:0 0 0 1px var(--a) inset}
+  .preset .band{font:700 13px var(--ui);color:var(--hi)}
+  .preset .hz{font:600 11px var(--mono);color:var(--a);margin-top:3px}
+  .preset .use{font-size:10.5px;color:var(--mute);margin-top:4px;line-height:1.25}
+  .readout{display:flex;justify-content:center;align-items:baseline;gap:8px;margin:26px 0 8px}
+  .readout .big{font:700 46px var(--mono);color:var(--hi);letter-spacing:-.02em}
+  .readout .unit{font:600 15px var(--mono);color:var(--a)}
+  .desc{text-align:center;color:var(--mute);font-size:13.5px;min-height:20px;margin-bottom:20px}
+  .ctrl{margin:16px 0}
+  .ctrl label{display:flex;justify-content:space-between;font:600 12px var(--mono);
+    color:var(--mute);letter-spacing:.04em;margin-bottom:8px;text-transform:uppercase}
+  .ctrl label b{color:var(--hi);font-family:var(--mono)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:4px;
+    background:linear-gradient(90deg,var(--a),var(--b));outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;
+    background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.5);cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:0;cursor:pointer}
+  .toggles{display:flex;gap:10px;margin:18px 0 4px}
+  .tg{flex:1;text-align:center;padding:10px;border:1px solid var(--line);border-radius:12px;
+    font:600 12.5px var(--ui);color:var(--mute);cursor:pointer;transition:.16s}
+  .tg.on{color:var(--hi);border-color:var(--b);background:rgba(167,139,250,.1)}
+  .play{width:100%;margin-top:22px;padding:17px;border:0;border-radius:14px;cursor:pointer;
+    font:700 17px var(--ui);color:#04121a;background:linear-gradient(90deg,var(--a),var(--b));
+    transition:.16s;letter-spacing:.01em}
+  .play:hover{filter:brightness(1.07)}
+  .play.playing{background:rgba(255,255,255,.08);color:var(--hi);border:1px solid var(--line)}
+  .note{text-align:center;color:var(--mute);font-size:12px;margin-top:16px;line-height:1.5}
+  .warn{color:var(--b)}
+  footer{position:relative;z-index:1;color:var(--mute);font-size:12.5px;text-align:center;margin-top:34px;max-width:480px}
+  a{color:var(--a);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="stage"><canvas id="viz"></canvas></div>
+<div class="wrap">
+  <header>
+    <div class="kick">Coherence</div>
+    <h1>Neural Entrainment</h1>
+    <p class="sub">Binaural beats generated live in your browser. Two pure tones, one per ear; the frequency difference is the beat your brain follows. Headphones required — the effect only exists in stereo.</p>
+  </header>
+
+  <div class="card">
+    <div class="presets" id="presets"></div>
+
+    <div class="readout"><span class="big" id="beatVal">10.0</span><span class="unit">Hz beat</span></div>
+    <div class="desc" id="desc">Alpha — relaxed, alert focus</div>
+
+    <div class="ctrl">
+      <label>Beat frequency <b><span id="beatL">10.0</span> Hz</b></label>
+      <input type="range" id="beat" min="0.5" max="40" step="0.1" value="10">
+    </div>
+    <div class="ctrl">
+      <label>Carrier tone <b><span id="carL">200</span> Hz</b></label>
+      <input type="range" id="carrier" min="100" max="400" step="1" value="200">
+    </div>
+    <div class="ctrl">
+      <label>Volume <b><span id="volL">45</span>%</b></label>
+      <input type="range" id="vol" min="0" max="100" step="1" value="45">
+    </div>
+
+    <div class="toggles">
+      <div class="tg on" id="tgNoise">Pink-noise bed</div>
+      <div class="tg" id="tgIso">Isochronic pulse</div>
+    </div>
+
+    <button class="play" id="play">▶  Begin session</button>
+    <div class="note"><span class="warn">Wear headphones.</span> Start low; let it settle for a few minutes. Not a medical device — general wellness / focus audio.</div>
+  </div>
+
+  <footer>
+    Built by Damon — <a href="mailto:iamagathodamon@gmail.com">iamagathodamon@gmail.com</a>. Runs entirely in your browser; no signup, no upload, nothing leaves your device.
+  </footer>
+</div>
+
+<script>
+const PRESETS = [
+  {band:"Delta", hz:2.5,  use:"Deep sleep",     desc:"Delta — deep sleep, recovery",           car:120},
+  {band:"Theta", hz:6,    use:"Meditate",       desc:"Theta — meditation, creativity, calm",   car:150},
+  {band:"Alpha", hz:10,   use:"Focus",          desc:"Alpha — relaxed, alert focus",           car:200},
+  {band:"Beta",  hz:18,   use:"Alert",          desc:"Beta — active thinking, alertness",      car:220},
+  {band:"Gamma", hz:40,   use:"Coherence",      desc:"Gamma — peak binding, 40Hz coherence",   car:250},
+];
+
+let ctx=null, nodes=null, playing=false;
+const el = id => document.getElementById(id);
+const beat=el('beat'), carrier=el('carrier'), vol=el('vol');
+
+// build preset buttons
+const pc = el('presets');
+PRESETS.forEach((p,i)=>{
+  const d=document.createElement('div');
+  d.className='preset'+(p.band==='Alpha'?' on':'');
+  d.innerHTML=`<div class="band">${p.band}</div><div class="hz">${p.hz} Hz</div><div class="use">${p.use}</div>`;
+  d.onclick=()=>{
+    document.querySelectorAll('.preset').forEach(x=>x.classList.remove('on'));
+    d.classList.add('on');
+    beat.value=p.hz; carrier.value=p.car;
+    el('desc').textContent=p.desc;
+    sync(); apply();
+  };
+  pc.appendChild(d);
+});
+
+let noiseOn=true, isoOn=false;
+el('tgNoise').onclick=e=>{noiseOn=!noiseOn;e.target.classList.toggle('on',noiseOn);apply();};
+el('tgIso').onclick=e=>{isoOn=!isoOn;e.target.classList.toggle('on',isoOn);apply();};
+
+function sync(){
+  el('beatVal').textContent=parseFloat(beat.value).toFixed(1);
+  el('beatL').textContent=parseFloat(beat.value).toFixed(1);
+  el('carL').textContent=carrier.value;
+  el('volL').textContent=vol.value;
+}
+[beat,carrier,vol].forEach(s=>s.addEventListener('input',()=>{sync();apply();
+  // clear preset highlight when manually tuned
+  if(s!==vol){document.querySelectorAll('.preset').forEach(x=>x.classList.remove('on'));el('desc').textContent='Custom tuning';}
+}));
+sync();
+
+function makePinkNoise(ac){
+  const buf=ac.createBuffer(1, ac.sampleRate*4, ac.sampleRate);
+  const out=buf.getChannelData(0);
+  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+  for(let i=0;i<out.length;i++){
+    const w=Math.random()*2-1;
+    b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759; b2=0.96900*b2+w*0.1538520;
+    b3=0.86650*b3+w*0.3104856; b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+    out[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11; b6=w*0.115926;
+  }
+  const src=ac.createBufferSource(); src.buffer=buf; src.loop=true; return src;
+}
+
+function start(){
+  ctx=new (window.AudioContext||window.webkitAudioContext)();
+  const car=+carrier.value, bt=+beat.value;
+  const oscL=ctx.createOscillator(), oscR=ctx.createOscillator();
+  oscL.frequency.value=car; oscR.frequency.value=car+bt;
+  const panL=ctx.createStereoPanner(), panR=ctx.createStereoPanner();
+  panL.pan.value=-1; panR.pan.value=1;
+  const toneGain=ctx.createGain(); toneGain.gain.value=0;
+  // isochronic amplitude LFO (optional)
+  const iso=ctx.createGain(); iso.gain.value=1;
+  const lfo=ctx.createOscillator(); lfo.frequency.value=bt;
+  const lfoGain=ctx.createGain(); lfoGain.gain.value=0.5; lfo.type='sine';
+  lfo.connect(lfoGain); lfoGain.connect(iso.gain);
+  oscL.connect(panL); oscR.connect(panR);
+  panL.connect(iso); panR.connect(iso); iso.connect(toneGain);
+  // noise bed
+  const noiseGain=ctx.createGain(); noiseGain.gain.value=0;
+  const noise=makePinkNoise(ctx);
+  const nf=ctx.createBiquadFilter(); nf.type='lowpass'; nf.frequency.value=1200;
+  noise.connect(nf); nf.connect(noiseGain);
+  const master=ctx.createGain(); master.gain.value=1;
+  toneGain.connect(master); noiseGain.connect(master); master.connect(ctx.destination);
+  oscL.start(); oscR.start(); lfo.start(); noise.start();
+  nodes={oscL,oscR,toneGain,noiseGain,iso,lfo,lfoGain,master,ctx};
+  apply(true);
+  window._nodes=nodes;
+}
+function apply(ramp){
+  if(!ctx||!nodes)return;
+  const t=ctx.currentTime, v=(+vol.value/100)*0.5;
+  const bt=+beat.value, car=+carrier.value;
+  nodes.oscL.frequency.setTargetAtTime(car,t,.05);
+  nodes.oscR.frequency.setTargetAtTime(car+bt,t,.05);
+  nodes.lfo.frequency.setTargetAtTime(bt,t,.05);
+  nodes.lfoGain.gain.setTargetAtTime(isoOn?0.5:0,t,.05);
+  nodes.iso.gain.setTargetAtTime(isoOn?0.5:1,t,.05);
+  nodes.toneGain.gain.setTargetAtTime(v, t, ramp?1.2:.1);
+  nodes.noiseGain.gain.setTargetAtTime(noiseOn?v*0.35:0, t, ramp?1.2:.1);
+  vizBeat=bt;
+}
+function stop(){
+  if(!ctx)return;
+  const t=ctx.currentTime;
+  nodes.toneGain.gain.setTargetAtTime(0,t,.4);
+  nodes.noiseGain.gain.setTargetAtTime(0,t,.4);
+  const c=ctx; setTimeout(()=>{try{c.close()}catch(e){}},900);
+  ctx=null; nodes=null;
+}
+el('play').onclick=function(){
+  playing=!playing;
+  this.classList.toggle('playing',playing);
+  this.textContent=playing?'■  End session':'▶  Begin session';
+  if(playing) start(); else stop();
+};
+
+// ambient visualization
+const cv=el('viz'), g=cv.getContext('2d'); let W,H,vizBeat=10,ph=0;
+function resize(){W=cv.width=innerWidth*devicePixelRatio;H=cv.height=innerHeight*devicePixelRatio;}
+addEventListener('resize',resize); resize();
+function draw(){
+  g.clearRect(0,0,W,H);
+  const cx=W/2, cy=H*0.42;
+  const pulse=playing?(Math.sin(ph)*0.5+0.5):0.15;
+  ph+=(vizBeat/60)*0.14;
+  for(let i=6;i>=0;i--){
+    const r=(Math.min(W,H)*0.13)*(i+1)*(0.7+pulse*0.5);
+    g.beginPath(); g.arc(cx,cy,r,0,Math.PI*2);
+    const a=(playing?0.10:0.04)*(1-i/8);
+    g.strokeStyle=`rgba(${110+i*8},${200-i*10},255,${a})`;
+    g.lineWidth=devicePixelRatio*1.2; g.stroke();
+  }
+  requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
