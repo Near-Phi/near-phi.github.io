@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RESONANCE: Audio-Reactive WebGL2 Visualizer | Near-Phi</title>
+    <meta name="description" content="A 4-mode audio-reactive WebGL2 visualizer. Pitch and beat detection from the microphone or a dropped audio file drive a real-time shader, live in the browser.">
+    <link rel="canonical" href="https://near-phi.github.io/resonance.html">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Near-Phi">
+    <meta property="og:title" content="RESONANCE: Audio-Reactive WebGL2 Visualizer">
+    <meta property="og:description" content="A 4-mode audio-reactive WebGL2 visualizer. Pitch and beat detection from the microphone or a dropped audio file drive a real-time shader, live in the browser.">
+    <meta property="og:url" content="https://near-phi.github.io/resonance.html">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@Near_Phi">
+    <meta name="twitter:title" content="RESONANCE: Audio-Reactive WebGL2 Visualizer">
+    <meta name="twitter:description" content="A 4-mode audio-reactive WebGL2 visualizer, live in the browser. Drop audio or use the mic.">
+    <link rel="stylesheet" href="./resonance-src/styles.css">
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <div id="hud" class="hud">
+      <div><span class="name">RESONANCE</span> <span id="mode">MANDALA</span> <span id="source">DEMO</span></div>
+      <div><span id="pitch">--</span> <span id="bpm">-- BPM</span> <span id="fps">60 FPS</span></div>
+      <div>1-4 modes  C palette  F fullscreen  H HUD  drop audio  click mic</div>
+    </div>
+    <button id="mic" class="mic" type="button" title="Use microphone">MIC</button>
+    <script type="module" src="./resonance-src/app.js"></script>
+  </body>
+</html>

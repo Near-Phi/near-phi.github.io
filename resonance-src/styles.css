@@ -1,0 +1,68 @@
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: #d7f7ff;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+#gl {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+}
+
+.hud {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
+  padding: 10px 12px;
+  max-width: min(680px, calc(100vw - 28px));
+  box-sizing: border-box;
+  color: rgba(221, 251, 255, 0.92);
+  background: rgba(0, 7, 12, 0.38);
+  border: 1px solid rgba(125, 226, 255, 0.25);
+  border-radius: 6px;
+  line-height: 1.45;
+  font-size: 12px;
+  text-shadow: 0 0 12px rgba(96, 220, 255, 0.55);
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+
+.hud.hidden {
+  display: none;
+}
+
+.name {
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.mic {
+  position: fixed;
+  right: 14px;
+  top: 14px;
+  z-index: 3;
+  height: 34px;
+  min-width: 52px;
+  border: 1px solid rgba(125, 226, 255, 0.42);
+  border-radius: 6px;
+  color: #e8fbff;
+  background: rgba(0, 10, 16, 0.48);
+  font: 700 12px ui-monospace, SFMono-Regular, Consolas, monospace;
+  cursor: pointer;
+  text-shadow: 0 0 12px rgba(96, 220, 255, 0.55);
+}
+
+.mic:hover,
+.mic:focus-visible {
+  background: rgba(20, 80, 96, 0.72);
+  outline: none;
+}

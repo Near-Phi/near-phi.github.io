@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Accelerator Simulator | Near-Phi</title>
+<meta name="description" content="A toy particle-collider simulator in the browser: pick beams (protons, ions, leptons), set energy and luminosity, and watch collisions, decays, and detector hits play out.">
+<link rel="canonical" href="https://near-phi.github.io/particle-accelerator.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="Particle Accelerator Simulator">
+<meta property="og:description" content="A toy particle-collider simulator in the browser: pick beams, set energy and luminosity, and watch collisions and decays play out on a schematic detector.">
+<meta property="og:url" content="https://near-phi.github.io/particle-accelerator.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<meta name="twitter:title" content="Particle Accelerator Simulator">
+<meta name="twitter:description" content="A toy particle-collider simulator in the browser: pick beams, set energy and luminosity, and watch collisions and decays play out.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #05050a; color: #ccc; font-family: 'Segoe UI', monospace; display: flex; height: 100vh; overflow: hidden; }
+
+canvas { flex: 1; min-width: 0; display: block; cursor: crosshair; }
+
+#controls {
+  width: 340px; min-width: 340px; background: #0a0a12; padding: 14px;
+  overflow-y: auto; border-left: 1px solid #1a1a2a;
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+h2 { color: #f80; font-size: 13px; text-transform: uppercase; letter-spacing: 2px; }
+h3 { color: #fa4; font-size: 11px; margin-top: 4px; border-top: 1px solid #1a1a2a; padding-top: 6px; }
+
+.section { background: #08080f; border: 1px solid #151520; border-radius: 6px; padding: 10px; }
+
+.param { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
+.param label { font-size: 11px; display: flex; justify-content: space-between; }
+.param label span { color: #fa4; font-weight: bold; }
+.param input[type=range] {
+  -webkit-appearance: none; width: 100%; height: 5px; background: #1a1a2a;
+  border-radius: 3px; outline: none;
+}
+.param input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px; background: #f80;
+  border-radius: 50%; cursor: pointer;
+}
+
+select, button {
+  background: #0f0f1a; color: #ccc; border: 1px solid #252530; padding: 5px 8px;
+  border-radius: 4px; font-size: 11px; cursor: pointer; width: 100%;
+}
+button:hover { background: #1a1a28; border-color: #f80; }
+button.fire { background: #401500; border-color: #f80; color: #f80; font-weight: bold; font-size: 13px; padding: 10px; }
+button.fire:hover { background: #602000; }
+
+.btn-row { display: flex; gap: 5px; }
+.btn-row button { flex: 1; }
+.btn-row select { flex: 1; }
+
+#eventLog {
+  font-size: 9px; color: #888; line-height: 1.5; max-height: 140px;
+  overflow-y: auto; background: #050508; border: 1px solid #111; border-radius: 4px;
+  padding: 6px; margin-top: 4px;
+}
+#eventLog .decay { color: #f84; }
+#eventLog .collision { color: #4f8; }
+#eventLog .annihilation { color: #f4f; }
+#eventLog .creation { color: #4af; }
+
+#stats { font-size: 10px; color: #555; line-height: 1.6; }
+#stats span { color: #fa4; }
+
+.particle-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; margin: 1px; cursor: default;
+}
+
+.legend { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="controls">
+  <h2>⚛ Particle Accelerator</h2>
+
+  <div class="section">
+    <h3>Beam Configuration</h3>
+    <div class="btn-row">
+      <div style="flex:1">
+        <label style="font-size:10px;color:#888">Beam 1</label>
+        <select id="beam1">
+          <option value="proton" selected>Proton (p)</option>
+          <option value="antiproton">Antiproton (p̄)</option>
+          <option value="electron">Electron (e⁻)</option>
+          <option value="positron">Positron (e⁺)</option>
+          <option value="muon">Muon (μ⁻)</option>
+          <option value="pion_plus">Pion (π⁺)</option>
+          <option value="kaon_plus">Kaon (K⁺)</option>
+          <option value="lead">Lead ion (Pb)</option>
+          <option value="gold">Gold ion (Au)</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label style="font-size:10px;color:#888">Beam 2</label>
+        <select id="beam2">
+          <option value="proton">Proton (p)</option>
+          <option value="antiproton" selected>Antiproton (p̄)</option>
+          <option value="electron">Electron (e⁻)</option>
+          <option value="positron">Positron (e⁺)</option>
+          <option value="muon">Muon (μ⁻)</option>
+          <option value="pion_minus">Pion (π⁻)</option>
+          <option value="kaon_minus">Kaon (K⁻)</option>
+          <option value="lead">Lead ion (Pb)</option>
+          <option value="gold">Gold ion (Au)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="param">
+      <label>Beam Energy <span id="v_energy">13.0 TeV</span></label>
+      <input type="range" id="energy" min="0.1" max="100" step="0.1" value="13">
+    </div>
+    <div class="param">
+      <label>Luminosity (collisions/sec) <span id="v_luminosity">3</span></label>
+      <input type="range" id="luminosity" min="0.5" max="20" step="0.5" value="3">
+    </div>
+
+    <select id="accelPreset" onchange="applyAccelPreset()">
+      <option value="">— Accelerator Presets —</option>
+      <option value="lhc">LHC (p+p, 13.6 TeV)</option>
+      <option value="lhc_pb">LHC Heavy Ion (Pb+Pb, 5.02 TeV)</option>
+      <option value="tevatron">Tevatron (p+p̄, 1.96 TeV)</option>
+      <option value="lep">LEP (e⁺+e⁻, 209 GeV)</option>
+      <option value="rhic">RHIC (Au+Au, 200 GeV)</option>
+      <option value="superKEKB">SuperKEKB (e⁺+e⁻, 10.58 GeV)</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <h3>Magnetic Field</h3>
+    <div class="param">
+      <label>B-Field Strength <span id="v_bfield">4.0 T</span></label>
+      <input type="range" id="bfield" min="0" max="15" step="0.1" value="4">
+    </div>
+    <div class="param">
+      <label>Detector Radius <span id="v_detRadius">280 px</span></label>
+      <input type="range" id="detRadius" min="100" max="500" step="10" value="280">
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Physics Controls</h3>
+    <div class="param">
+      <label>Time Scale <span id="v_timeScale">1.0x</span></label>
+      <input type="range" id="timeScale" min="0.1" max="5" step="0.1" value="1">
+    </div>
+    <div class="param">
+      <label>Decay Probability <span id="v_decayProb">1.00</span></label>
+      <input type="range" id="decayProb" min="0" max="1" step="0.01" value="1">
+    </div>
+    <div class="param">
+      <label>Pair Production Rate <span id="v_pairRate">0.50</span></label>
+      <input type="range" id="pairRate" min="0" max="1" step="0.01" value="0.5">
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Display</h3>
+    <div class="btn-row">
+      <button onclick="viewMode='detector'" id="btn_detector">Detector View</button>
+      <button onclick="viewMode='tracks'" id="btn_tracks">Bubble Chamber</button>
+    </div>
+    <div class="param" style="margin-top:6px">
+      <label>Trail Persistence <span id="v_trailFade">0.97</span></label>
+      <input type="range" id="trailFade" min="0.8" max="1" step="0.005" value="0.97">
+    </div>
+  </div>
+
+  <div class="section">
+    <button class="fire" onclick="collide()">⚡ COLLIDE BEAMS ⚡</button>
+    <div class="btn-row" style="margin-top:6px">
+      <button onclick="clearTracks()">Clear</button>
+      <button onclick="autoCollide = !autoCollide; this.style.borderColor = autoCollide?'#f80':'#252530'">Auto-Fire</button>
+      <button onclick="paused=!paused; this.textContent=paused?'Play':'Pause'">Pause</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>Particle Legend</h3>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="section">
+    <h3>Event Log</h3>
+    <div id="eventLog"></div>
+  </div>
+
+  <div id="stats">
+    FPS: <span id="fps">0</span> |
+    Tracks: <span id="trackCount">0</span> |
+    Events: <span id="eventCount">0</span><br>
+    Total Energy: <span id="totalE">0</span> GeV |
+    Collisions: <span id="collisionCount">0</span>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ============== REAL PARTICLE DATA (PDG values) ==============
+const PARTICLES = {
+  // Leptons
+  electron:     { name: 'e⁻',  mass: 0.000511, charge: -1, color: [80,180,255],  stable: true,  type: 'lepton', anti: 'positron' },
+  positron:     { name: 'e⁺',  mass: 0.000511, charge: 1,  color: [255,120,80],  stable: true,  type: 'lepton', anti: 'electron' },
+  muon:         { name: 'μ⁻',  mass: 0.10566,  charge: -1, color: [100,100,255], stable: false, type: 'lepton', lifetime: 2.2e-6,
+                  decays: [{ products: ['electron','nu_mu_bar','nu_e'], br: 1.0 }], anti: 'antimuon' },
+  antimuon:     { name: 'μ⁺',  mass: 0.10566,  charge: 1,  color: [255,100,100], stable: false, type: 'lepton', lifetime: 2.2e-6,
+                  decays: [{ products: ['positron','nu_mu','nu_e_bar'], br: 1.0 }], anti: 'muon' },
+  tau:          { name: 'τ⁻',  mass: 1.777,    charge: -1, color: [60,60,220],   stable: false, type: 'lepton', lifetime: 2.9e-13,
+                  decays: [{ products: ['muon','nu_tau_bar','nu_mu'], br: 0.17 },
+                           { products: ['electron','nu_tau_bar','nu_e'], br: 0.18 },
+                           { products: ['pion_minus','nu_tau'], br: 0.11 },
+                           { products: ['pion_minus','pion_zero','nu_tau'], br: 0.26 }], anti: 'antitau' },
+  antitau:      { name: 'τ⁺',  mass: 1.777,    charge: 1,  color: [220,60,60],   stable: false, type: 'lepton', lifetime: 2.9e-13,
+                  decays: [{ products: ['antimuon','nu_tau','nu_mu_bar'], br: 0.17 },
+                           { products: ['positron','nu_tau','nu_e_bar'], br: 0.18 },
+                           { products: ['pion_plus','nu_tau_bar'], br: 0.37 }] },
+  // Neutrinos (invisible but tracked)
+  nu_e:         { name: 'νₑ',  mass: 0, charge: 0, color: [40,40,60],  stable: true, type: 'lepton', invisible: true },
+  nu_e_bar:     { name: 'ν̄ₑ',  mass: 0, charge: 0, color: [60,40,40],  stable: true, type: 'lepton', invisible: true },
+  nu_mu:        { name: 'νμ',  mass: 0, charge: 0, color: [40,40,60],  stable: true, type: 'lepton', invisible: true },
+  nu_mu_bar:    { name: 'ν̄μ',  mass: 0, charge: 0, color: [60,40,40],  stable: true, type: 'lepton', invisible: true },
+  nu_tau:       { name: 'ντ',  mass: 0, charge: 0, color: [40,40,60],  stable: true, type: 'lepton', invisible: true },
+  nu_tau_bar:   { name: 'ν̄τ',  mass: 0, charge: 0, color: [60,40,40],  stable: true, type: 'lepton', invisible: true },
+
+  // Quarks don't fly free — hadrons only
+  // Mesons
+  pion_plus:    { name: 'π⁺',  mass: 0.13957,  charge: 1,  color: [255,200,50],  stable: false, type: 'meson', lifetime: 2.6e-8,
+                  decays: [{ products: ['antimuon','nu_mu'], br: 0.999 }], anti: 'pion_minus' },
+  pion_minus:   { name: 'π⁻',  mass: 0.13957,  charge: -1, color: [200,180,50],  stable: false, type: 'meson', lifetime: 2.6e-8,
+                  decays: [{ products: ['muon','nu_mu_bar'], br: 0.999 }], anti: 'pion_plus' },
+  pion_zero:    { name: 'π⁰',  mass: 0.13498,  charge: 0,  color: [180,180,80],  stable: false, type: 'meson', lifetime: 8.5e-17,
+                  decays: [{ products: ['photon','photon'], br: 0.988 }] },
+  kaon_plus:    { name: 'K⁺',  mass: 0.49368,  charge: 1,  color: [50,255,150],  stable: false, type: 'meson', lifetime: 1.24e-8,
+                  decays: [{ products: ['antimuon','nu_mu'], br: 0.634 },
+                           { products: ['pion_plus','pion_zero'], br: 0.21 }], anti: 'kaon_minus' },
+  kaon_minus:   { name: 'K⁻',  mass: 0.49368,  charge: -1, color: [50,200,120],  stable: false, type: 'meson', lifetime: 1.24e-8,
+                  decays: [{ products: ['muon','nu_mu_bar'], br: 0.634 },
+                           { products: ['pion_minus','pion_zero'], br: 0.21 }], anti: 'kaon_plus' },
+  kaon_zero:    { name: 'K⁰',  mass: 0.49761,  charge: 0,  color: [50,220,130],  stable: false, type: 'meson', lifetime: 5.1e-8,
+                  decays: [{ products: ['pion_plus','pion_minus'], br: 0.69 },
+                           { products: ['pion_zero','pion_zero'], br: 0.31 }] },
+
+  // Baryons
+  proton:       { name: 'p',   mass: 0.93827,  charge: 1,  color: [255,80,80],   stable: true,  type: 'baryon', anti: 'antiproton' },
+  antiproton:   { name: 'p̄',   mass: 0.93827,  charge: -1, color: [80,80,255],   stable: true,  type: 'baryon', anti: 'proton' },
+  neutron:      { name: 'n',   mass: 0.93957,  charge: 0,  color: [180,180,180], stable: false, type: 'baryon', lifetime: 880,
+                  decays: [{ products: ['proton','electron','nu_e_bar'], br: 1.0 }], anti: 'antineutron' },
+  antineutron:  { name: 'n̄',   mass: 0.93957,  charge: 0,  color: [140,140,180], stable: false, type: 'baryon', lifetime: 880,
+                  decays: [{ products: ['antiproton','positron','nu_e'], br: 1.0 }] },
+  lambda:       { name: 'Λ⁰',  mass: 1.11568,  charge: 0,  color: [200,150,255], stable: false, type: 'baryon', lifetime: 2.6e-10,
+                  decays: [{ products: ['proton','pion_minus'], br: 0.64 },
+                           { products: ['neutron','pion_zero'], br: 0.36 }] },
+  sigma_plus:   { name: 'Σ⁺',  mass: 1.18937,  charge: 1,  color: [220,170,255], stable: false, type: 'baryon', lifetime: 8.0e-11,
+                  decays: [{ products: ['proton','pion_zero'], br: 0.52 },
+                           { products: ['neutron','pion_plus'], br: 0.48 }] },
+  xi_minus:     { name: 'Ξ⁻',  mass: 1.32171,  charge: -1, color: [180,120,255], stable: false, type: 'baryon', lifetime: 1.6e-10,
+                  decays: [{ products: ['lambda','pion_minus'], br: 1.0 }] },
+  omega:        { name: 'Ω⁻',  mass: 1.67245,  charge: -1, color: [160,100,255], stable: false, type: 'baryon', lifetime: 8.2e-11,
+                  decays: [{ products: ['lambda','kaon_minus'], br: 0.68 },
+                           { products: ['xi_minus','pion_zero'], br: 0.24 }] },
+
+  // Bosons
+  photon:       { name: 'γ',   mass: 0, charge: 0, color: [255,255,100], stable: true, type: 'boson', invisible: false },
+
+  // J/psi and other resonances
+  jpsi:         { name: 'J/ψ', mass: 3.0969,   charge: 0,  color: [255,50,255],  stable: false, type: 'meson', lifetime: 7.1e-21,
+                  decays: [{ products: ['electron','positron'], br: 0.06 },
+                           { products: ['muon','antimuon'], br: 0.06 },
+                           { products: ['pion_plus','pion_minus','pion_zero'], br: 0.02 }] },
+
+  // Heavy ions (simplified)
+  lead:         { name: 'Pb',  mass: 193.7,    charge: 82, color: [150,150,150], stable: true, type: 'ion' },
+  gold:         { name: 'Au',  mass: 183.5,    charge: 79, color: [255,215,0],   stable: true, type: 'ion' },
+};
+
+// Collision product tables based on center-of-mass energy
+function getCollisionProducts(beam1, beam2, energy) {
+  const products = [];
+  const isAnnihilation = (beam1 === 'proton' && beam2 === 'antiproton') ||
+                         (beam1 === 'electron' && beam2 === 'positron') ||
+                         (PARTICLES[beam1]?.anti === beam2);
+
+  // Heavy ion collision — quark-gluon plasma spray
+  if (PARTICLES[beam1]?.type === 'ion' || PARTICLES[beam2]?.type === 'ion') {
+    const mult = Math.floor(energy * 3 + 10);
+    for (let i = 0; i < mult; i++) {
+      const r = Math.random();
+      if (r < 0.4) products.push(Math.random() < 0.5 ? 'pion_plus' : 'pion_minus');
+      else if (r < 0.55) products.push('pion_zero');
+      else if (r < 0.65) products.push('proton');
+      else if (r < 0.72) products.push(Math.random() < 0.5 ? 'kaon_plus' : 'kaon_minus');
+      else if (r < 0.78) products.push('neutron');
+      else if (r < 0.82) products.push('lambda');
+      else if (r < 0.85) products.push('sigma_plus');
+      else if (r < 0.87) products.push('xi_minus');
+      else if (r < 0.88) products.push('omega');
+      else if (r < 0.92) products.push(Math.random() < 0.5 ? 'electron' : 'positron');
+      else if (r < 0.95) products.push(Math.random() < 0.5 ? 'muon' : 'antimuon');
+      else products.push('photon');
+    }
+    return products;
+  }
+
+  // e+e- annihilation
+  if (beam1 === 'electron' && beam2 === 'positron' || beam1 === 'positron' && beam2 === 'electron') {
+    if (energy > 3.0 && energy < 3.2 && Math.random() < 0.3) {
+      products.push('jpsi'); // J/psi resonance!
+    } else if (energy > 1.8) {
+      // Hadron production
+      const n = Math.floor(2 + energy * 0.8);
+      for (let i = 0; i < n; i++) {
+        const r = Math.random();
+        if (r < 0.3) { products.push('pion_plus'); products.push('pion_minus'); }
+        else if (r < 0.5) { products.push('kaon_plus'); products.push('kaon_minus'); }
+        else if (r < 0.65) { products.push('muon'); products.push('antimuon'); }
+        else if (r < 0.8) { products.push('proton'); products.push('antiproton'); }
+        else { products.push('tau'); products.push('antitau'); }
+      }
+    } else {
+      products.push('muon'); products.push('antimuon');
+      products.push('photon');
+    }
+    return products;
+  }
+
+  // p + p̄ annihilation
+  if (isAnnihilation) {
+    const mult = Math.floor(3 + energy * 1.5);
+    for (let i = 0; i < mult; i++) {
+      const r = Math.random();
+      if (r < 0.35) products.push(Math.random() < 0.5 ? 'pion_plus' : 'pion_minus');
+      else if (r < 0.5) products.push('pion_zero');
+      else if (r < 0.6) products.push(Math.random() < 0.5 ? 'kaon_plus' : 'kaon_minus');
+      else if (r < 0.68) products.push('kaon_zero');
+      else if (r < 0.75) { products.push('muon'); products.push('antimuon'); }
+      else if (r < 0.82) products.push('lambda');
+      else if (r < 0.88) products.push('photon');
+      else if (r < 0.93) { products.push('electron'); products.push('positron'); }
+      else if (r < 0.97) products.push('jpsi');
+      else products.push('omega');
+    }
+    return products;
+  }
+
+  // p + p collision (LHC-like)
+  const mult = Math.floor(4 + energy * 1.2);
+  for (let i = 0; i < mult; i++) {
+    const r = Math.random();
+    if (r < 0.3) products.push(Math.random() < 0.5 ? 'pion_plus' : 'pion_minus');
+    else if (r < 0.45) products.push('pion_zero');
+    else if (r < 0.55) products.push('proton');
+    else if (r < 0.62) products.push(Math.random() < 0.5 ? 'kaon_plus' : 'kaon_minus');
+    else if (r < 0.68) products.push('neutron');
+    else if (r < 0.74) products.push('lambda');
+    else if (r < 0.78) products.push('photon');
+    else if (r < 0.83) { products.push('muon'); products.push('antimuon'); }
+    else if (r < 0.87) { products.push('electron'); products.push('positron'); }
+    else if (r < 0.91) products.push('sigma_plus');
+    else if (r < 0.94) products.push('xi_minus');
+    else if (r < 0.97) products.push('jpsi');
+    else products.push('omega');
+  }
+  // Leading protons survive
+  if (Math.random() < 0.4) products.push('proton');
+  if (Math.random() < 0.4) products.push('proton');
+
+  return products;
+}
+
+// ============== SIMULATION STATE ==============
+let tracks = [];      // all particle tracks (alive + dead)
+let liveParticles = []; // currently simulating
+let paused = false;
+let autoCollide = false;
+let autoTimer = 0;
+let viewMode = 'detector';
+let eventCount = 0;
+let collisionCount = 0;
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let currentFps = 0;
+
+function resize() {
+  canvas.width = canvas.clientWidth * devicePixelRatio;
+  canvas.height = canvas.clientHeight * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+function param(id) { return parseFloat(document.getElementById(id).value); }
+
+// Value display updates
+document.querySelectorAll('.param input[type=range]').forEach(el => {
+  el.addEventListener('input', () => {
+    const span = document.getElementById('v_' + el.id);
+    if (!span) return;
+    const v = parseFloat(el.value);
+    if (el.id === 'energy') span.textContent = v >= 1 ? v.toFixed(1) + ' TeV' : (v * 1000).toFixed(0) + ' GeV';
+    else if (el.id === 'bfield') span.textContent = v.toFixed(1) + ' T';
+    else if (el.id === 'detRadius') span.textContent = v + ' px';
+    else if (el.id === 'timeScale') span.textContent = v.toFixed(1) + 'x';
+    else span.textContent = v.toFixed(2);
+  });
+});
+
+// ============== COLLISION ==============
+function collide() {
+  const cx = canvas.clientWidth / 2;
+  const cy = canvas.clientHeight / 2;
+  const energy = param('energy');
+  const beam1 = document.getElementById('beam1').value;
+  const beam2 = document.getElementById('beam2').value;
+  const b1 = PARTICLES[beam1];
+  const b2 = PARTICLES[beam2];
+
+  collisionCount++;
+
+  // Get collision products
+  const productNames = getCollisionProducts(beam1, beam2, energy);
+
+  // Log event
+  logEvent('collision', `${b1.name} + ${b2.name} → ${productNames.map(p => PARTICLES[p]?.name || p).join(' + ')} @ ${energy >= 1 ? energy.toFixed(1)+'TeV' : (energy*1000).toFixed(0)+'GeV'}`);
+
+  // Distribute energy among products
+  const totalMass = productNames.reduce((s, p) => s + (PARTICLES[p]?.mass || 0), 0);
+  const availableKE = Math.max(energy * 1000 - totalMass, 1); // GeV
+
+  // Create particle tracks with random directions (conserving rough momentum)
+  const jitter = viewMode === 'detector' ? 0 : 3;
+  for (const pName of productNames) {
+    const pDef = PARTICLES[pName];
+    if (!pDef) continue;
+
+    // Random direction with some jitter
+    const angle = Math.random() * Math.PI * 2;
+    const ke = availableKE / productNames.length * (0.3 + Math.random() * 1.4);
+    const totalE = ke + pDef.mass;
+    const momentum = Math.sqrt(Math.max(totalE * totalE - pDef.mass * pDef.mass, 0.001));
+
+    // Speed as fraction of c (visual), scaled for display
+    const speed = Math.min(momentum / (totalE + 0.01), 0.999);
+    const displaySpeed = 1.5 + speed * 5; // pixels per frame
+
+    const particle = {
+      id: pName,
+      def: pDef,
+      x: cx + (Math.random() - 0.5) * jitter,
+      y: cy + (Math.random() - 0.5) * jitter,
+      vx: Math.cos(angle) * displaySpeed,
+      vy: Math.sin(angle) * displaySpeed,
+      energy: totalE,
+      momentum,
+      alive: true,
+      age: 0,
+      trail: [{ x: cx, y: cy }],
+      decayed: false,
+      // Lorentz factor for time dilation
+      gamma: totalE / Math.max(pDef.mass, 0.001),
+    };
+
+    liveParticles.push(particle);
+    tracks.push(particle);
+  }
+
+  eventCount++;
+}
+
+function logEvent(type, msg) {
+  const log = document.getElementById('eventLog');
+  const div = document.createElement('div');
+  div.className = type;
+  div.textContent = `[${eventCount}] ${msg}`;
+  log.prepend(div);
+  // Keep log manageable
+  while (log.children.length > 50) log.removeChild(log.lastChild);
+}
+
+// ============== PHYSICS STEP ==============
+function step() {
+  const bfield = param('bfield');
+  const timeScale = param('timeScale');
+  const decayProb = param('decayProb');
+  const detR = param('detRadius');
+  const cx = canvas.clientWidth / 2;
+  const cy = canvas.clientHeight / 2;
+
+  const newParticles = [];
+
+  for (const p of liveParticles) {
+    if (!p.alive) continue;
+
+    p.age += timeScale;
+
+    // Magnetic field bends charged particles: radius = p / (qB)
+    // Curvature = qB/p
+    if (p.def.charge !== 0 && bfield > 0) {
+      const curvature = p.def.charge * bfield * 0.002 / Math.max(p.momentum, 0.01);
+      const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+      const angle = Math.atan2(p.vy, p.vx);
+      const newAngle = angle + curvature * timeScale;
+      p.vx = Math.cos(newAngle) * speed;
+      p.vy = Math.sin(newAngle) * speed;
+    }
+
+    // Move
+    p.x += p.vx * timeScale;
+    p.y += p.vy * timeScale;
+    p.trail.push({ x: p.x, y: p.y });
+
+    // Energy loss (ionization — charged particles slow down)
+    if (p.def.charge !== 0) {
+      const lossFactor = 0.9995;
+      p.vx *= lossFactor;
+      p.vy *= lossFactor;
+      p.energy *= lossFactor;
+    }
+
+    // Photons travel straight and don't curve
+    if (p.id === 'photon') {
+      // photons don't lose energy in vacuum
+    }
+
+    // Decay check
+    if (!p.def.stable && p.def.decays && decayProb > 0) {
+      // Lifetime in lab frame = γ * proper lifetime
+      // Scale for visual: shorter lifetime = faster decay
+      const properLifetime = p.def.lifetime || 1;
+      const labLifetime = p.gamma * properLifetime;
+      // Convert to frame probability (scaled for visibility)
+      const decayScale = 0.02 * decayProb / Math.max(Math.log10(1 / properLifetime), 1);
+
+      if (Math.random() < decayScale * timeScale) {
+        p.alive = false;
+        p.decayed = true;
+
+        // Choose decay channel based on branching ratios
+        const roll = Math.random();
+        let cumBR = 0;
+        let chosenDecay = p.def.decays[0];
+        for (const d of p.def.decays) {
+          cumBR += d.br;
+          if (roll < cumBR) { chosenDecay = d; break; }
+        }
+
+        // Create decay products
+        const baseAngle = Math.atan2(p.vy, p.vx);
+        const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+        const nProd = chosenDecay.products.length;
+        const prodNames = [];
+
+        for (let i = 0; i < nProd; i++) {
+          const prodId = chosenDecay.products[i];
+          const prodDef = PARTICLES[prodId];
+          if (!prodDef) continue;
+
+          const spreadAngle = (i - (nProd - 1) / 2) * 0.4;
+          const angle = baseAngle + spreadAngle + (Math.random() - 0.5) * 0.1;
+          const prodSpeed = speed * (0.5 + Math.random() * 0.8);
+
+          const child = {
+            id: prodId,
+            def: prodDef,
+            x: p.x, y: p.y,
+            vx: Math.cos(angle) * prodSpeed,
+            vy: Math.sin(angle) * prodSpeed,
+            energy: p.energy / nProd,
+            momentum: p.momentum / nProd,
+            alive: true,
+            age: 0,
+            trail: [{ x: p.x, y: p.y }],
+            decayed: false,
+            gamma: (p.energy / nProd) / Math.max(prodDef.mass, 0.001),
+          };
+          newParticles.push(child);
+          tracks.push(child);
+          prodNames.push(prodDef.name);
+        }
+        logEvent('decay', `${p.def.name} → ${prodNames.join(' + ')}`);
+      }
+    }
+
+    // Kill if out of detector
+    const dx = p.x - cx, dy = p.y - cy;
+    if (dx * dx + dy * dy > (detR + 100) * (detR + 100)) {
+      p.alive = false;
+    }
+
+    // Kill if too slow
+    if (p.vx * p.vx + p.vy * p.vy < 0.01 && p.def.charge !== 0) {
+      p.alive = false;
+    }
+  }
+
+  liveParticles.push(...newParticles);
+  liveParticles = liveParticles.filter(p => p.alive);
+
+  // Auto-collide
+  if (autoCollide) {
+    autoTimer += timeScale;
+    const lumi = param('luminosity');
+    if (autoTimer > 60 / lumi) {
+      autoTimer = 0;
+      collide();
+    }
+  }
+}
+
+// ============== DRAWING ==============
+function draw() {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  const cx = w / 2;
+  const cy = h / 2;
+  const detR = param('detRadius');
+  const trailFade = param('trailFade');
+
+  // Fade
+  ctx.fillStyle = `rgba(5, 5, 10, ${1 - trailFade})`;
+  ctx.fillRect(0, 0, w, h);
+
+  if (viewMode === 'detector') {
+    drawDetector(cx, cy, detR);
+  }
+
+  // Draw all tracks
+  let totalE = 0;
+
+  for (const p of tracks) {
+    const col = p.def.color;
+    if (p.def.invisible && !p.alive) continue;
+
+    // Trail
+    if (p.trail.length > 1) {
+      ctx.beginPath();
+      ctx.moveTo(p.trail[0].x, p.trail[0].y);
+      for (let i = 1; i < p.trail.length; i++) {
+        ctx.lineTo(p.trail[i].x, p.trail[i].y);
+      }
+
+      if (p.def.invisible) {
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},0.15)`;
+        ctx.setLineDash([2, 4]);
+      } else if (p.id === 'photon') {
+        ctx.strokeStyle = `rgba(255,255,100,${p.alive ? 0.6 : 0.25})`;
+        ctx.setLineDash([1, 3]);
+      } else {
+        const alpha = p.alive ? 0.8 : 0.35;
+        ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
+        ctx.setLineDash([]);
+      }
+      ctx.lineWidth = p.def.type === 'ion' ? 3 : (p.alive ? 1.5 : 0.8);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Particle head (if alive)
+    if (p.alive) {
+      totalE += p.energy;
+      const r = p.def.type === 'ion' ? 5 : (p.def.charge === 0 ? 2 : 3);
+
+      // Glow
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r + 3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},0.2)`;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
+      ctx.fill();
+    }
+
+    // Decay vertex marker
+    if (p.decayed && p.trail.length > 0) {
+      const last = p.trail[p.trail.length - 1];
+      ctx.beginPath();
+      ctx.arc(last.x, last.y, 3, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,200,50,0.5)`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  // Beam lines (before collision)
+  ctx.strokeStyle = 'rgba(255,100,0,0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 8]);
+  ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(w, cy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Stats
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime > 500) {
+    currentFps = Math.round(frameCount / ((now - lastFpsTime) / 1000));
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+  document.getElementById('fps').textContent = currentFps;
+  document.getElementById('trackCount').textContent = tracks.length;
+  document.getElementById('eventCount').textContent = eventCount;
+  document.getElementById('totalE').textContent = totalE.toFixed(1);
+  document.getElementById('collisionCount').textContent = collisionCount;
+}
+
+function drawDetector(cx, cy, detR) {
+  // Detector layers (like CMS/ATLAS cross-section)
+
+  // Beam pipe
+  ctx.strokeStyle = 'rgba(100,100,100,0.3)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, 15, 0, Math.PI * 2); ctx.stroke();
+
+  // Inner tracker (silicon)
+  ctx.strokeStyle = 'rgba(80,150,255,0.12)';
+  ctx.lineWidth = 1;
+  for (let r = 30; r < detR * 0.35; r += 20) {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Electromagnetic calorimeter
+  ctx.strokeStyle = 'rgba(50,200,100,0.1)';
+  ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.arc(cx, cy, detR * 0.45, 0, Math.PI * 2); ctx.stroke();
+
+  // Hadronic calorimeter
+  ctx.strokeStyle = 'rgba(200,150,50,0.08)';
+  ctx.lineWidth = 20;
+  ctx.beginPath(); ctx.arc(cx, cy, detR * 0.65, 0, Math.PI * 2); ctx.stroke();
+
+  // Solenoid magnet
+  ctx.strokeStyle = 'rgba(255,50,50,0.08)';
+  ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.arc(cx, cy, detR * 0.78, 0, Math.PI * 2); ctx.stroke();
+
+  // Muon chambers (outermost)
+  ctx.strokeStyle = 'rgba(100,100,255,0.06)';
+  ctx.lineWidth = 3;
+  for (let r = detR * 0.85; r < detR; r += 15) {
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Outer boundary
+  ctx.strokeStyle = 'rgba(100,100,100,0.2)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, detR, 0, Math.PI * 2); ctx.stroke();
+
+  // Labels
+  ctx.font = '9px monospace';
+  ctx.fillStyle = 'rgba(100,100,100,0.5)';
+  ctx.fillText('Tracker', cx + detR * 0.12, cy - detR * 0.2);
+  ctx.fillText('ECAL', cx + detR * 0.38, cy - detR * 0.25);
+  ctx.fillText('HCAL', cx + detR * 0.55, cy - detR * 0.38);
+  ctx.fillText('Magnet', cx + detR * 0.72, cy - detR * 0.35);
+  ctx.fillText('Muon Det.', cx + detR * 0.82, cy - detR * 0.25);
+
+  // Collision point
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,150,0,0.6)';
+  ctx.fill();
+}
+
+function clearTracks() {
+  tracks = [];
+  liveParticles = [];
+  // Full clear
+  ctx.fillStyle = '#05050a';
+  ctx.fillRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+}
+
+// ============== PRESETS ==============
+function applyAccelPreset() {
+  const v = document.getElementById('accelPreset').value;
+  switch (v) {
+    case 'lhc':
+      document.getElementById('beam1').value = 'proton';
+      document.getElementById('beam2').value = 'proton';
+      document.getElementById('energy').value = 13.6;
+      document.getElementById('bfield').value = 8.3;
+      break;
+    case 'lhc_pb':
+      document.getElementById('beam1').value = 'lead';
+      document.getElementById('beam2').value = 'lead';
+      document.getElementById('energy').value = 5.02;
+      document.getElementById('bfield').value = 8.3;
+      break;
+    case 'tevatron':
+      document.getElementById('beam1').value = 'proton';
+      document.getElementById('beam2').value = 'antiproton';
+      document.getElementById('energy').value = 1.96;
+      document.getElementById('bfield').value = 4.0;
+      break;
+    case 'lep':
+      document.getElementById('beam1').value = 'electron';
+      document.getElementById('beam2').value = 'positron';
+      document.getElementById('energy').value = 0.209;
+      document.getElementById('bfield').value = 0.5;
+      break;
+    case 'rhic':
+      document.getElementById('beam1').value = 'gold';
+      document.getElementById('beam2').value = 'gold';
+      document.getElementById('energy').value = 0.2;
+      document.getElementById('bfield').value = 3.5;
+      break;
+    case 'superKEKB':
+      document.getElementById('beam1').value = 'electron';
+      document.getElementById('beam2').value = 'positron';
+      document.getElementById('energy').value = 0.01058;
+      document.getElementById('bfield').value = 1.5;
+      break;
+  }
+  // Update displays
+  document.querySelectorAll('.param input[type=range]').forEach(el => el.dispatchEvent(new Event('input')));
+  document.getElementById('accelPreset').value = '';
+}
+
+// ============== LEGEND ==============
+function buildLegend() {
+  const legend = document.getElementById('legend');
+  const shown = ['proton','antiproton','electron','positron','muon','antimuon','tau',
+                 'pion_plus','pion_minus','pion_zero','kaon_plus','kaon_minus',
+                 'lambda','omega','jpsi','photon','neutron'];
+  for (const id of shown) {
+    const p = PARTICLES[id];
+    if (!p) continue;
+    const badge = document.createElement('span');
+    badge.className = 'particle-badge';
+    badge.style.background = `rgba(${p.color[0]},${p.color[1]},${p.color[2]},0.25)`;
+    badge.style.color = `rgb(${p.color[0]},${p.color[1]},${p.color[2]})`;
+    badge.style.border = `1px solid rgba(${p.color[0]},${p.color[1]},${p.color[2]},0.4)`;
+    badge.textContent = p.name;
+    badge.title = `${id}: mass=${p.mass} GeV/c², charge=${p.charge}, ${p.stable?'stable':'unstable'}`;
+    legend.appendChild(badge);
+  }
+}
+buildLegend();
+
+// ============== MAIN LOOP ==============
+function loop() {
+  if (!paused) {
+    step();
+    draw();
+  }
+  requestAnimationFrame(loop);
+}
+
+// Click to collide
+canvas.addEventListener('click', () => collide());
+
+loop();
+</script>
+</body>
+</html>
