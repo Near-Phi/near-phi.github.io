@@ -32,6 +32,7 @@
       "@type": "ItemList",
       "name": "Near-Phi Studio Instruments",
       "itemListElement": [
+        { "@type": "ListItem", "position": 0,  "name": "THE LAB: Type Math, See Math",           "url": "https://near-phi.github.io/lab.html" },
         { "@type": "ListItem", "position": 1,  "name": "BLOOM: Sacred Geometry Spirograph",      "url": "https://near-phi.github.io/spirograph.html" },
         { "@type": "ListItem", "position": 2,  "name": "HYPERSPACE: 4D Polytope Explorer",       "url": "https://near-phi.github.io/tesseract.html" },
         { "@type": "ListItem", "position": 3,  "name": "THE GATE: Hyperbolic Tiling Portal",     "url": "https://near-phi.github.io/hyperbolic.html" },
@@ -132,6 +133,9 @@
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 18px;
   }
+  a.card.hero { grid-column: 1 / -1; height: 300px; }
+  a.card.hero .label h2 { font-size: 1.35rem; letter-spacing: 3px; }
+  a.card.hero .label p { font-size: 0.88rem; max-width: 720px; }
   a.card {
     position: relative;
     display: block;
@@ -228,6 +232,9 @@
     <p class="lead">Every panel below is alive — a real simulation running in your browser right now, not a screenshot. Open any instrument. No install, no login, no paywall. Source open, new instruments ship as they are built. Follow along at <a href="https://x.com/Near_Phi">@Near_Phi</a>.</p>
   </header>
 
+  <div class="section-tag">THE LAB</div>
+  <div class="tools" id="grid-lab"></div>
+
   <div class="section-tag">VISUAL INSTRUMENTS</div>
   <div class="tools" id="grid-new"></div>
 
@@ -241,12 +248,19 @@
 
   <footer>
     Source for every instrument: <a href="https://github.com/Near-Phi">github.com/Near-Phi</a>
+    &nbsp;&middot;&nbsp;
+    <a href="https://github.com/Near-Phi/near-phi.github.io/archive/refs/heads/main.zip">DOWNLOAD THE FULL STUDIO</a>
+    <span style="color:var(--dim)">- every instrument, one zip, runs offline in your browser</span>
   </footer>
 </div>
 
 <script>
 'use strict';
 /* ============ catalog ============ */
+const LAB_TOOL = [
+  { href:'lab.html', mode:20, name:'THE LAB', tag:'type math, see math', tagc:'gold', hero:true,
+    desc:'Type any equation and watch it become real: glowing curves, living surfaces, complex-plane portraits, Fourier circles rebuilding your function, equations you can HEAR, and portraits of pi, e, phi and the primes themselves.' },
+];
 const NEW_TOOLS = [
   { href:'spirograph.html',   mode:1,  name:'BLOOM',         tag:'sacred geometry', tagc:'gold',   desc:'Recursive golden-ratio epicycles trace luminous mandalas that bloom and breathe.' },
   { href:'tesseract.html',    mode:2,  name:'HYPERSPACE',    tag:'4th dimension',   tagc:'',       desc:'True 4D polytopes in double rotation — the tesseract and the 120-cell, projected into your screen.' },
@@ -275,7 +289,7 @@ const LOCAL_ENGINES = [
 
 function makeCard(t, localBadge) {
   const a = document.createElement('a');
-  a.className = 'card';
+  a.className = 'card' + (t.hero ? ' hero' : '');
   a.href = t.href;
   a.dataset.mode = t.mode;
   a.innerHTML = '<div class="view"></div><i></i><i></i><i></i><i></i>' +
@@ -287,6 +301,7 @@ function makeCard(t, localBadge) {
 const gridNew = document.getElementById('grid-new');
 const gridClassic = document.getElementById('grid-classic');
 const gridLocal = document.getElementById('grid-local');
+LAB_TOOL.forEach(t => document.getElementById('grid-lab').appendChild(makeCard(t)));
 NEW_TOOLS.forEach(t => gridNew.appendChild(makeCard(t)));
 CLASSIC_TOOLS.forEach(t => gridClassic.appendChild(makeCard(t)));
 LOCAL_ENGINES.forEach(t => gridLocal.appendChild(makeCard(t, true)));
@@ -603,6 +618,27 @@ if (gl) {
       }
       if (esc) col = (0.5+0.5*cos(TAU*(mu*0.05+t*0.05+vec3(0.1,0.5,0.8)))) * vec3(1.0,0.9,0.7) * smoothstep(0.0,2.0,mu)*0.8;
     }
+    else if (m == 20) { /* THE LAB: live domain coloring of z^3-1, phase rotating */
+      vec2 z = p*2.2;
+      /* w = z^3 - 1, computed inline */
+      vec2 z2 = vec2(z.x*z.x-z.y*z.y, 2.0*z.x*z.y);
+      vec2 w = vec2(z2.x*z.x-z2.y*z.y, z2.x*z.y+z2.y*z.x) - vec2(1.0,0.0);
+      float m2 = length(w);
+      float arg = atan(w.y,w.x) + t*0.35;
+      float lm = log2(m2+1e-9);
+      float ring = abs(fract(lm)-0.5)*2.0;
+      col = (0.5+0.5*cos(TAU*(arg/TAU + vec3(0.0,0.33,0.67)))) * (0.45+0.4*ring);
+      col *= 0.4 + 0.6*smoothstep(0.0,2.5,m2);
+      /* grid web */
+      vec2 gw = abs(fract(w*0.5-0.5)-0.5)/(fwidth(w)*0.5+1e-4);
+      col = mix(col, vec3(1.0), (1.0-smoothstep(0.0,1.5,min(gw.x,gw.y)))*0.22);
+      /* the equation bar ghost */
+      if (abs(p.y+0.42) < 0.05 && abs(p.x) < 0.55) {
+        col *= 0.25;
+        float cur = step(fract(t*1.6), 0.55);
+        if (abs(p.x - (-0.5 + fract(t*0.13)*0.6)) < 0.006 && abs(p.y+0.42) < 0.03) col += vec3(0.35,0.95,1.0)*cur*2.0;
+      }
+    }
     else if (m == 19) { /* RESONANCE ENGINE: waterfall stripes */
       float v = sin(p.x*22.0 + sin(p.y*5.0+t)*2.0 - t*2.0) * exp(-abs(p.y)*1.2);
       col = max(v,0.0) * (0.5+0.5*cos(TAU*(p.y*0.4+t*0.08+vec3(0.0,0.33,0.67))));
@@ -702,9 +738,12 @@ if (gl) {
         c.hover += ((c.target || 0) - c.hover) * 0.08;
         const r = c.view.getBoundingClientRect();
         if (r.bottom < 0 || r.top > innerHeight || r.width < 2) continue;
-        const x = Math.max(0, Math.round(r.left));
-        const y = Math.max(0, Math.round(H - r.bottom));
-        const w = Math.round(Math.min(r.width, glCanvas.width - x));
+        /* negative origins are valid for viewport/scissor and keep partially
+           offscreen cards correctly clipped - clamping shifted them onto
+           neighboring cards */
+        const x = Math.round(r.left);
+        const y = Math.round(H - r.bottom);
+        const w = Math.round(r.width);
         const h = Math.round(r.height);
         if (w < 2 || h < 2) continue;
         gl.viewport(x, y, w, h);

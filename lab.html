@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE LAB: Type Math, See Math | Near-Phi</title>
+<meta name="description" content="A live mathematics laboratory in your browser: type any equation and see it rendered - glowing curves, 3D surfaces, complex domain coloring, Fourier epicycles, sound, and portraits of pi, e, phi and the primes.">
+<link rel="canonical" href="https://near-phi.github.io/lab.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="THE LAB: Type Math, See Math">
+<meta property="og:description" content="Type any equation and see it rendered live: curves, surfaces, complex domain coloring, Fourier epicycles, sound, and portraits of the constants.">
+<meta property="og:url" content="https://near-phi.github.io/lab.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<style>
+  :root {
+    --bg:#05050a; --ink:#c8cde0; --dim:#6a7188; --accent:#59f2ff;
+    --gold:#ffcf6a; --violet:#9b6bff; --err:#ff6a7a;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { background:var(--bg); height:100%; overflow:hidden;
+    font-family:'Cascadia Code','Consolas',monospace; color:var(--ink); }
+  #gl { position:fixed; inset:0; width:100vw; height:100vh; display:block; }
+  #fourier { position:fixed; inset:0; width:100vw; height:100vh; display:none; pointer-events:none; }
+
+  /* mode rail */
+  #modes { position:fixed; top:14px; left:50%; transform:translateX(-50%);
+    display:flex; gap:6px; z-index:10; }
+  .mode { padding:6px 14px; font-size:12px; letter-spacing:2px; cursor:pointer;
+    color:var(--dim); border:1px solid #22283a; border-radius:20px;
+    background:rgba(5,6,12,0.72); transition:all .2s; user-select:none; }
+  .mode:hover { color:var(--ink); border-color:#3a4258; }
+  .mode.on { color:var(--accent); border-color:rgba(89,242,255,0.55);
+    text-shadow:0 0 12px rgba(89,242,255,0.6); }
+
+  /* the equation bar - the whole point of the room */
+  #bar { position:fixed; left:50%; bottom:34px; transform:translateX(-50%);
+    width:min(860px, 92vw); z-index:10; }
+  #eqwrap { display:flex; align-items:center; gap:12px;
+    background:rgba(8,10,18,0.82); border:1px solid rgba(89,242,255,0.30);
+    border-radius:12px; padding:14px 18px;
+    box-shadow:0 0 40px rgba(89,242,255,0.10), inset 0 0 30px rgba(89,242,255,0.03);
+    backdrop-filter: blur(6px); }
+  #lhs { color:var(--gold); font-size:20px; white-space:nowrap; text-shadow:0 0 14px rgba(255,207,106,0.5); }
+  #eq { flex:1; background:transparent; border:none; outline:none;
+    color:#eef6ff; font-family:inherit; font-size:20px; letter-spacing:1px;
+    text-shadow:0 0 10px rgba(89,242,255,0.55); caret-color:var(--accent); }
+  #eq::placeholder { color:#3a4258; text-shadow:none; }
+  #err { position:absolute; left:20px; top:-22px; font-size:12px; color:var(--err);
+    letter-spacing:1px; opacity:0; transition:opacity .2s; }
+  #err.show { opacity:1; }
+  #examples { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; justify-content:center; }
+  .ex { font-size:11.5px; color:var(--dim); border:1px solid #1c2233; border-radius:16px;
+    padding:4px 12px; cursor:pointer; background:rgba(5,6,12,0.6); transition:all .2s;
+    max-width:46vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .ex:hover { color:var(--accent); border-color:rgba(89,242,255,0.4); }
+
+  /* corner chrome */
+  #title { position:fixed; top:16px; left:20px; z-index:10; font-size:13px;
+    letter-spacing:4px; color:var(--ink); }
+  #title b { color:var(--accent); font-weight:normal; }
+  #hint { position:fixed; top:38px; left:20px; z-index:10; font-size:10.5px;
+    letter-spacing:1px; color:var(--dim); max-width:300px; line-height:1.6; }
+  #home { position:fixed; top:16px; right:20px; z-index:10; font-size:11px;
+    letter-spacing:2px; color:var(--dim); text-decoration:none; border:1px solid #22283a;
+    padding:5px 12px; border-radius:16px; background:rgba(5,6,12,0.6); }
+  #home:hover { color:var(--accent); border-color:rgba(89,242,255,0.4); }
+  #soundbtn { position:fixed; right:20px; bottom:44px; z-index:10; display:none;
+    font-size:12px; letter-spacing:2px; color:var(--gold); border:1px solid rgba(255,207,106,0.4);
+    padding:8px 16px; border-radius:20px; background:rgba(5,6,12,0.7); cursor:pointer; }
+  #soundbtn:hover { text-shadow:0 0 10px rgba(255,207,106,0.7); }
+  #lost { position:fixed; inset:0; z-index:99; display:none; align-items:center;
+    justify-content:center; background:#000; color:var(--err); font-size:16px; letter-spacing:2px; }
+  .capture #modes,.capture #bar,.capture #title,.capture #hint,.capture #home,.capture #soundbtn { display:none !important; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="fourier"></canvas>
+<div id="title">THE <b>LAB</b></div>
+<div id="hint"></div>
+<a id="home" href="index.html">STUDIO</a>
+<div id="modes"></div>
+<div id="bar">
+  <div id="err"></div>
+  <div id="eqwrap"><span id="lhs">y =</span><input id="eq" spellcheck="false" autocomplete="off"></div>
+  <div id="examples"></div>
+</div>
+<button id="soundbtn">&#9654; HEAR IT</button>
+<div id="lost">WEBGL CONTEXT LOST - RELOAD</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   THE LAB - type math, see math.
+   One expression parser feeds every room:
+     tokenizer -> shunting-yard -> RPN -> (a) JS evaluator (b) GLSL scalar
+     (c) GLSL complex (every op swapped for its complex twin).
+   ===================================================================== */
+
+/* ---------------- parser ---------------- */
+const FUNCS = ['sin','cos','tan','asin','acos','atan','sinh','cosh','tanh',
+               'exp','log','ln','sqrt','abs','floor','ceil','sign','min','max','mod','pow'];
+const CONSTS = { pi: Math.PI, tau: Math.PI*2, e: Math.E, phi: (1+Math.sqrt(5))/2 };
+
+function tokenize(src, vars){
+  const toks = [];
+  let i = 0;
+  const s = src.replace(/\s+/g,'');
+  while(i < s.length){
+    const c = s[i];
+    if(/[0-9.]/.test(c)){
+      let j = i;
+      while(j < s.length && /[0-9.]/.test(s[j])) j++;
+      const num = s.slice(i,j);
+      if((num.match(/\./g)||[]).length > 1) throw 'bad number ' + num;
+      toks.push({t:'num', v:parseFloat(num)});
+      i = j;
+      continue;
+    }
+    if(/[a-zA-Z_]/.test(c)){
+      let j = i;
+      while(j < s.length && /[a-zA-Z_0-9]/.test(s[j])) j++;
+      const w = s.slice(i,j);
+      if(FUNCS.includes(w)) toks.push({t:'fn', v: w==='ln' ? 'log' : w});
+      else if(w in CONSTS) toks.push({t:'num', v:CONSTS[w]});
+      else if(vars.includes(w)) toks.push({t:'var', v:w});
+      else throw 'unknown: ' + w;
+      i = j;
+      continue;
+    }
+    if('+-*/^(),'.includes(c)){ toks.push({t:c}); i++; continue; }
+    throw 'unexpected: ' + c;
+  }
+  return toks;
+}
+
+// implicit multiplication: num|var|) followed by num|var|fn|(
+function implicitMul(toks){
+  const out = [];
+  for(let k=0;k<toks.length;k++){
+    out.push(toks[k]);
+    const a = toks[k], b = toks[k+1];
+    if(!b) continue;
+    const endsVal = a.t==='num' || a.t==='var' || a.t===')';
+    const startsVal = b.t==='num' || b.t==='var' || b.t==='fn' || b.t==='(';
+    if(endsVal && startsVal) out.push({t:'*'});
+  }
+  return out;
+}
+
+function toRPN(toks){
+  const out = [], ops = [];
+  const prec = {'+':2,'-':2,'*':3,'/':3,'^':4,'u-':3.5}; // u- below ^: -x^2 = -(x^2)
+  const rightAssoc = {'^':1,'u-':1};
+  let prev = null;
+  for(const tk of toks){
+    if(tk.t==='num' || tk.t==='var'){ out.push(tk); }
+    else if(tk.t==='fn'){ ops.push(tk); }
+    else if(tk.t===','){
+      while(ops.length && ops[ops.length-1].t!=='(') out.push(ops.pop());
+      if(!ops.length) throw 'misplaced comma';
+    }
+    else if(tk.t==='('){ ops.push(tk); }
+    else if(tk.t===')'){
+      while(ops.length && ops[ops.length-1].t!=='(') out.push(ops.pop());
+      if(!ops.length) throw 'unbalanced )';
+      ops.pop();
+      if(ops.length && ops[ops.length-1].t==='fn') out.push(ops.pop());
+    }
+    else { // operator
+      let op = tk.t;
+      const unary = (op==='-') && (prev===null || (prev.t!=='num' && prev.t!=='var' && prev.t!==')'));
+      if(unary) op = 'u-';
+      if(op==='+' && (prev===null || (prev.t!=='num' && prev.t!=='var' && prev.t!==')'))) { prev = tk; continue; }
+      if(op==='u-'){ ops.push({t:'op', op}); prev = tk; continue; } // prefix: never pops
+      while(ops.length){
+        const top = ops[ops.length-1];
+        if(top.t==='(' || top.t==='fn') break;
+        const pt = prec[top.op||top.t], po = prec[op];
+        if(pt > po || (pt===po && !rightAssoc[op])) out.push(ops.pop());
+        else break;
+      }
+      ops.push({t:'op', op});
+    }
+    prev = tk;
+  }
+  while(ops.length){
+    const top = ops.pop();
+    if(top.t==='(') throw 'unbalanced (';
+    out.push(top);
+  }
+  if(!out.length) throw 'empty';
+  return out;
+}
+
+function parse(src, vars){ return toRPN(implicitMul(tokenize(src, vars))); }
+
+/* RPN -> JS function of (vars object) */
+function compileJS(rpn, vars){
+  const st = [];
+  const F = { sin:'Math.sin',cos:'Math.cos',tan:'Math.tan',asin:'Math.asin',acos:'Math.acos',
+    atan:'Math.atan',sinh:'Math.sinh',cosh:'Math.cosh',tanh:'Math.tanh',exp:'Math.exp',
+    log:'Math.log',sqrt:'Math.sqrt',abs:'Math.abs',floor:'Math.floor',ceil:'Math.ceil',
+    sign:'Math.sign',min:'Math.min',max:'Math.max',pow:'Math.pow' };
+  for(const tk of rpn){
+    if(tk.t==='num') st.push('(' + tk.v + ')');
+    else if(tk.t==='var') st.push(tk.v);
+    else if(tk.t==='fn'){
+      if(tk.v==='min'||tk.v==='max'||tk.v==='pow'||tk.v==='mod'){
+        const b = st.pop(), a = st.pop();
+        if(a===undefined) throw tk.v + ' needs 2 args';
+        st.push(tk.v==='mod' ? `(((${a})%(${b}))+(${b}))%(${b})` : `${F[tk.v]}(${a},${b})`);
+      } else {
+        const a = st.pop();
+        if(a===undefined) throw 'missing arg';
+        st.push(`${F[tk.v]}(${a})`);
+      }
+    } else {
+      if(tk.op==='u-'){ const a = st.pop(); if(a===undefined) throw 'bad -'; st.push(`(-(${a}))`); }
+      else {
+        const b = st.pop(), a = st.pop();
+        if(a===undefined||b===undefined) throw 'bad expr';
+        st.push(tk.op==='^' ? `Math.pow(${a},${b})` : `((${a})${tk.op}(${b}))`);
+      }
+    }
+  }
+  if(st.length!==1) throw 'bad expression';
+  return new Function(...vars, `return (${st[0]});`);
+}
+
+/* RPN -> GLSL scalar expression (vars are float uniforms/locals of same name) */
+function compileGLSL(rpn){
+  const st = [];
+  const one = { sin:1,cos:1,tan:1,asin:1,acos:1,atan:1,sinh:1,cosh:1,tanh:1,
+                exp:1,log:1,sqrt:1,abs:1,floor:1,ceil:1,sign:1 };
+  for(const tk of rpn){
+    if(tk.t==='num'){
+      let v = tk.v.toString();
+      if(!v.includes('.') && !v.includes('e')) v += '.0';
+      st.push('(' + v + ')');
+    }
+    else if(tk.t==='var') st.push(tk.v);
+    else if(tk.t==='fn'){
+      if(one[tk.v]){ const a = st.pop(); if(a===undefined) throw 'missing arg'; st.push(`${tk.v}(${a})`); }
+      else {
+        const b = st.pop(), a = st.pop();
+        if(a===undefined) throw tk.v + ' needs 2 args';
+        if(tk.v==='mod') st.push(`mod(${a},${b})`);
+        else if(tk.v==='pow') st.push(`s_pow(${a},${b})`);
+        else st.push(`${tk.v}(${a},${b})`);
+      }
+    }
+    else {
+      if(tk.op==='u-'){ const a = st.pop(); if(a===undefined) throw 'bad -'; st.push(`(-(${a}))`); }
+      else {
+        const b = st.pop(), a = st.pop();
+        if(a===undefined||b===undefined) throw 'bad expr';
+        st.push(tk.op==='^' ? `s_pow(${a},${b})` : `((${a})${tk.op}(${b}))`);
+      }
+    }
+  }
+  if(st.length!==1) throw 'bad expression';
+  return st[0];
+}
+
+/* RPN -> GLSL complex expression: every value is vec2 (re,im) */
+function compileGLSLComplex(rpn){
+  const st = [];
+  const map = { sin:'csin',cos:'ccos',tan:'ctan',exp:'cexp',log:'cln',sqrt:'csqrt',
+    abs:'cabsv',sinh:'csinh',cosh:'ccosh',tanh:'ctanh',floor:'cfloor',ceil:'cceil',
+    sign:'csignv',asin:'casin',acos:'cacos',atan:'catan' };
+  for(const tk of rpn){
+    if(tk.t==='num'){
+      let v = tk.v.toString();
+      if(!v.includes('.') && !v.includes('e')) v += '.0';
+      st.push(`vec2(${v},0.0)`);
+    }
+    else if(tk.t==='var') st.push(tk.v); // z, t are vec2 (t promoted as vec2(t,0))
+    else if(tk.t==='fn'){
+      if(map[tk.v]){ const a = st.pop(); if(a===undefined) throw 'missing arg'; st.push(`${map[tk.v]}(${a})`); }
+      else if(tk.v==='pow'){ const b = st.pop(), a = st.pop(); if(a===undefined) throw 'pow needs 2'; st.push(`cpow(${a},${b})`); }
+      else if(tk.v==='min'||tk.v==='max'||tk.v==='mod'){ throw tk.v + ' not defined for complex'; }
+    }
+    else {
+      if(tk.op==='u-'){ const a = st.pop(); if(a===undefined) throw 'bad -'; st.push(`(-(${a}))`); }
+      else {
+        const b = st.pop(), a = st.pop();
+        if(a===undefined||b===undefined) throw 'bad expr';
+        if(tk.op==='+') st.push(`(${a}+${b})`);
+        else if(tk.op==='-') st.push(`(${a}-${b})`);
+        else if(tk.op==='*') st.push(`cmul(${a},${b})`);
+        else if(tk.op==='/') st.push(`cdiv(${a},${b})`);
+        else st.push(`cpow(${a},${b})`);
+      }
+    }
+  }
+  if(st.length!==1) throw 'bad expression';
+  return st[0];
+}
+
+/* ---------------- GL plumbing ---------------- */
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias:false, preserveDrawingBuffer:true });
+if(!gl){ document.getElementById('lost').style.display='flex'; }
+let DPR = Math.min(2, window.devicePixelRatio||1);
+
+const VS = `#version 300 es
+layout(location=0) in vec2 p; void main(){ gl_Position=vec4(p,0.,1.); }`;
+
+/* library prelude shared by every generated shader */
+const PRELUDE = `#version 300 es
+precision highp float;
+uniform vec2 u_res; uniform float u_time; uniform vec2 u_center; uniform float u_scale;
+out vec4 O;
+#define TAU 6.28318530718
+float s_pow(float a, float b){
+  if(a >= 0.0) return pow(a, b);
+  float bi = floor(b + 0.5);
+  if(abs(b - bi) < 1e-6){ float m = (mod(bi, 2.0) < 0.5) ? 1.0 : -1.0; return m * pow(-a, b); }
+  return 0.0; /* undefined branch: render as gap, never NaN-flood */
+}
+vec2 cmul(vec2 a, vec2 b){ return vec2(a.x*b.x-a.y*b.y, a.x*b.y+a.y*b.x); }
+vec2 cdiv(vec2 a, vec2 b){ float d=dot(b,b)+1e-12; return vec2(a.x*b.x+a.y*b.y, a.y*b.x-a.x*b.y)/d; }
+vec2 cexp(vec2 z){ return exp(z.x)*vec2(cos(z.y), sin(z.y)); }
+vec2 cln(vec2 z){ return vec2(0.5*log(dot(z,z)+1e-20), atan(z.y, z.x)); }
+vec2 cpow(vec2 a, vec2 b){ return cexp(cmul(b, cln(a))); }
+vec2 csin(vec2 z){ return vec2(sin(z.x)*cosh(z.y), cos(z.x)*sinh(z.y)); }
+vec2 ccos(vec2 z){ return vec2(cos(z.x)*cosh(z.y), -sin(z.x)*sinh(z.y)); }
+vec2 ctan(vec2 z){ return cdiv(csin(z), ccos(z)); }
+vec2 csinh(vec2 z){ return vec2(sinh(z.x)*cos(z.y), cosh(z.x)*sin(z.y)); }
+vec2 ccosh(vec2 z){ return vec2(cosh(z.x)*cos(z.y), sinh(z.x)*sin(z.y)); }
+vec2 ctanh(vec2 z){ return cdiv(csinh(z), ccosh(z)); }
+vec2 csqrt(vec2 z){ float r=sqrt(length(z)); float a=0.5*atan(z.y,z.x); return r*vec2(cos(a),sin(a)); }
+vec2 cabsv(vec2 z){ return vec2(length(z), 0.0); }
+vec2 cfloor(vec2 z){ return floor(z); }
+vec2 cceil(vec2 z){ return ceil(z); }
+vec2 csignv(vec2 z){ return vec2(sign(z.x), sign(z.y)); }
+vec2 casin(vec2 z){ vec2 i=vec2(0.,1.); return cmul(-i, cln(cmul(i,z)+csqrt(vec2(1.,0.)-cmul(z,z)))); }
+vec2 cacos(vec2 z){ vec2 i=vec2(0.,1.); return cmul(-i, cln(z+cmul(i,csqrt(vec2(1.,0.)-cmul(z,z))))); }
+vec2 catan(vec2 z){ vec2 i=vec2(0.,1.); return cmul(vec2(0.,0.5), cln(cdiv(vec2(1.,0.)-cmul(i,z), vec2(1.,0.)+cmul(i,z)))); }
+vec3 hsv(float h, float s, float v){
+  vec3 p = abs(fract(vec3(h)+vec3(0.,2./3.,1./3.))*6.0-3.0);
+  return v * mix(vec3(1.0), clamp(p-1.0,0.0,1.0), s);
+}
+float gridline(vec2 w, float sp){
+  vec2 g = abs(fract(w/sp - 0.5) - 0.5) * sp / fwidth(w);
+  return 1.0 - smoothstep(0.0, 1.6, min(g.x, g.y));
+}
+`;
+
+function makeProgram(fsBody){
+  const fs = PRELUDE + fsBody;
+  function sh(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      const log = gl.getShaderInfoLog(s);
+      gl.deleteShader(s);
+      throw 'shader: ' + log;
+    }
+    return s;
+  }
+  const p = gl.createProgram();
+  const v = sh(gl.VERTEX_SHADER, VS), f = sh(gl.FRAGMENT_SHADER, fs);
+  gl.attachShader(p,v); gl.attachShader(p,f); gl.linkProgram(p);
+  gl.deleteShader(v); gl.deleteShader(f);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw 'link: ' + gl.getProgramInfoLog(p);
+  return p;
+}
+
+let quad = null;
+function bindQuad(){
+  if(!quad){
+    quad = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,3,-1,-1,3]), gl.STATIC_DRAW);
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+}
+
+/* ---------------- the rooms ---------------- */
+/* Each mode: {name, lhs, vars, placeholder, examples[], hint, buildFS(expr)->fsBody,
+              needsJS? , onExpr(jsFn)?} */
+
+const CURVE_FS = (ex) => `
+float f(float x, float t){ return ${ex}; }
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*u_res)/u_res.y;
+  vec2 w = uv*u_scale + u_center;
+  float t = u_time;
+  vec3 col = vec3(0.0);
+  col += vec3(0.10,0.16,0.30) * gridline(w, 1.0) * 0.5;
+  col += vec3(0.14,0.22,0.40) * gridline(w, 5.0) * 0.8;
+  float ax = 1.0 - smoothstep(0.0, 1.6, abs(w.y)/fwidth(w.y));
+  float ay = 1.0 - smoothstep(0.0, 1.6, abs(w.x)/fwidth(w.x));
+  col += vec3(0.25,0.35,0.55)*(ax+ay)*0.7;
+  /* signed distance to y=f(x), normalized by gradient for even thickness */
+  float F = w.y - f(w.x, t);
+  float dfx = (f(w.x + fwidth(w.x), t) - f(w.x - fwidth(w.x), t)) / (2.0*fwidth(w.x));
+  float d = abs(F) / max(sqrt(1.0 + dfx*dfx), 1e-6);
+  float px = d / fwidth(w.y);
+  float core = 1.0 - smoothstep(0.0, 1.8, px);
+  float glow = 0.10 / (px*0.06 + 0.12);
+  vec3 ink = mix(vec3(0.35,0.95,1.0), vec3(1.0,0.81,0.42), 0.5+0.5*sin(w.x*0.5+t*0.6));
+  col += ink * (core*1.4 + glow*0.5);
+  /* soft area fill under the curve toward the axis */
+  float below = smoothstep(0.0, 0.02*u_scale, -F*sign(f(w.x,t)));
+  col += ink * below * 0.05 * (1.0-smoothstep(0.0, abs(f(w.x,t))+1e-3, abs(w.y)));
+  vec2 vg = gl_FragCoord.xy/u_res; vg = vg*(1.0-vg);
+  col *= pow(vg.x*vg.y*16.0, 0.10);
+  O = vec4(col, 1.0);
+}`;
+
+const SURFACE_FS = (ex) => `
+float f(float x, float y, float t){ return ${ex}; }
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*u_res)/u_res.y;
+  float t = u_time;
+  /* rotating view of the domain */
+  float ca = cos(t*0.1), sa = sin(t*0.1);
+  vec2 w = mat2(ca,-sa,sa,ca) * uv * u_scale + u_center;
+  float h  = f(w.x, w.y, t);
+  float e  = max(fwidth(w.x), 1e-4);
+  float hx = (f(w.x+e, w.y, t) - f(w.x-e, w.y, t)) / (2.0*e);
+  float hy = (f(w.x, w.y+e, t) - f(w.x, w.y-e, t)) / (2.0*e);
+  vec3 n = normalize(vec3(-hx, -hy, 1.0));
+  vec3 L = normalize(vec3(cos(t*0.23)*0.7, sin(t*0.23)*0.7, 0.65));
+  float diff = clamp(dot(n,L), 0.0, 1.0);
+  float spec = pow(clamp(dot(reflect(-L, n), vec3(0.,0.,1.)), 0.0, 1.0), 24.0);
+  float hn = clamp(h*0.25+0.5, 0.0, 1.0);
+  vec3 base = hsv(0.62 - hn*0.5, 0.75, 0.35 + 0.55*hn);
+  vec3 col = base*(0.25 + diff*0.9) + vec3(1.0,0.95,0.85)*spec*0.7;
+  /* height contour lines - the topographic read */
+  float c = abs(fract(h*2.0)-0.5)/fwidth(h*2.0);
+  col += vec3(0.35,0.95,1.0) * (1.0-smoothstep(0.0,1.4,c)) * 0.35;
+  vec2 vg = gl_FragCoord.xy/u_res; vg = vg*(1.0-vg);
+  col *= pow(vg.x*vg.y*16.0, 0.12);
+  O = vec4(col, 1.0);
+}`;
+
+const COMPLEX_FS = (ex) => `
+vec2 F(vec2 z, vec2 t){ return ${ex}; }
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*u_res)/u_res.y;
+  vec2 z = uv*u_scale + u_center;
+  vec2 t = vec2(u_time, 0.0);
+  vec2 w = F(z, t);
+  float m = length(w);
+  float arg = atan(w.y, w.x);
+  /* classic domain coloring: hue=arg, |w| contours in brightness, grid of re/im */
+  float lm = log2(m + 1e-20);
+  float ring = abs(fract(lm)-0.5)*2.0;               /* modulus contours (octaves) */
+  float gw = gridline(w, 1.0);                        /* image of the unit grid */
+  vec3 col = hsv(arg/TAU, 0.85, 0.55 + 0.40*ring);
+  col *= 0.55 + 0.45*smoothstep(0.0, 4.0, m);         /* zeros fall to black */
+  col = mix(col, vec3(1.0), gw*0.25);                 /* white web = grid image */
+  col += hsv(arg/TAU, 0.4, 1.0) * pow(1.0-ring, 8.0) * 0.15;
+  /* poles bloom to white */
+  col = mix(col, vec3(1.0,0.98,0.9), smoothstep(30.0, 300.0, m)*0.85);
+  vec2 vg = gl_FragCoord.xy/u_res; vg = vg*(1.0-vg);
+  col *= pow(vg.x*vg.y*16.0, 0.10);
+  O = vec4(col, 1.0);
+}`;
+
+const POLAR_FS = (ex) => `
+float f(float th, float t){ return ${ex}; }
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*u_res)/u_res.y;
+  vec2 w = uv*u_scale + u_center;
+  float t = u_time;
+  float r = length(w);
+  vec3 col = vec3(0.0);
+  float rings = 1.0 - smoothstep(0.0, 1.6, abs(fract(r)-0.5)*1.0/fwidth(r));
+  col += vec3(0.10,0.16,0.30)*rings*0.4;
+  /* the curve r = f(theta): theta is multivalued, sample all branches near this pixel */
+  float th0 = atan(w.y, w.x);
+  float best = 1e9;
+  for(int k=-3;k<=3;k++){
+    float th = th0 + float(k)*TAU;
+    float fr = f(th, t);
+    best = min(best, abs(r - fr));
+  }
+  float px = best / fwidth(r);
+  float core = 1.0 - smoothstep(0.0, 1.8, px);
+  float glow = 0.10 / (px*0.06 + 0.12);
+  vec3 ink = mix(vec3(1.0,0.81,0.42), vec3(0.61,0.42,1.0), 0.5+0.5*sin(th0*3.0+t*0.5));
+  col += ink * (core*1.5 + glow*0.55);
+  vec2 vg = gl_FragCoord.xy/u_res; vg = vg*(1.0-vg);
+  col *= pow(vg.x*vg.y*16.0, 0.10);
+  O = vec4(col, 1.0);
+}`;
+
+/* SOUND mode shader: waveform + spectrum painted from JS textures would be
+   heavier than needed - draw waveform analytically + FFT bars via uniform array */
+const SOUND_FS = (ex) => `
+float f(float x, float t){ return ${ex}; }
+uniform float u_spec[64];
+void main(){
+  vec2 uv = gl_FragCoord.xy/u_res;
+  vec2 c = (gl_FragCoord.xy - 0.5*u_res)/u_res.y;
+  float t = u_time;
+  vec3 col = vec3(0.0);
+  /* scrolling waveform, x in seconds */
+  float x = (uv.x - 0.5) * 0.02 + t*0.25;   /* 20ms window scrolling */
+  float w = clamp(f(x*440.0*TAU, t), -3.0, 3.0);  /* audible phase convention */
+  float d = abs(c.y*2.2 - w*0.55) / (fwidth(c.y)*2.2);
+  col += vec3(0.35,0.95,1.0) * (1.0-smoothstep(0.0,1.8,d)) * 1.3;
+  col += vec3(0.35,0.95,1.0) * 0.10/(d*0.05+0.12) * 0.4;
+  /* spectrum bars along the bottom */
+  float bi = floor(uv.x*64.0);
+  float amp = u_spec[int(clamp(bi,0.0,63.0))];
+  float bar = step(uv.y, amp*0.35) * step(uv.y, 0.36);
+  float inBar = smoothstep(0.9,1.0,fract(uv.x*64.0)) ;
+  col += hsv(0.55 - amp*0.4, 0.8, 1.0) * bar * (1.0-inBar) * (0.25+amp);
+  vec2 vg = uv*(1.0-uv);
+  col *= pow(vg.x*vg.y*16.0, 0.10);
+  O = vec4(col, 1.0);
+}`;
+
+/* CONSTANTS mode is CPU-drawn (digit walks / prime spirals) onto the 2D canvas */
+
+/* ---------------- mode definitions ---------------- */
+const MODES = [
+  {
+    key:'CURVE', lhs:'y =', vars:['x','t'],
+    placeholder:'sin(x) * exp(-x*x/20) ... use x and t',
+    hint:'y as a function of x. Use t for time - the equation is alive. Drag to pan, scroll to zoom.',
+    examples:['sin(x)*exp(-x*x/20)','sin(x+t)+sin(2x+t*1.3)/2+sin(3x)/3','tan(sin(x)+t)','x*sin(1/x*5+t)','exp(-x*x)*cos(10x-t*4)','abs(mod(x+t,4)-2)-1'],
+    build: CURVE_FS, scale:12, center:[0,0]
+  },
+  {
+    key:'SURFACE', lhs:'z =', vars:['x','y','t'],
+    placeholder:'sin(x)*cos(y) ... a landscape from your equation',
+    hint:'z as a function of x and y, lit as living relief with height contours. t animates.',
+    examples:['sin(x)*cos(y)','sin(sqrt(x*x+y*y)*2-t*2)/(1+(x*x+y*y)/8)','sin(x+sin(y+t))','cos(x*y/3+t)','sin(x)*sin(y)*sin(t)*3','exp(-((x-2)^2+y^2)/4)-exp(-((x+2)^2+y^2)/4)'],
+    build: SURFACE_FS, scale:14, center:[0,0]
+  },
+  {
+    key:'COMPLEX', lhs:'w =', vars:['z','t'],
+    placeholder:'(z^2-1)*(z-2-i)/(z^2+2) ... this is what an equation LOOKS like',
+    hint:'Domain coloring of w = f(z): hue = phase, rings = magnitude, black = zeros, white = poles. The portrait of a complex function.',
+    examples:['z^3-1','(z^2-1)/(z^2+1)','sin(z)','exp(1/z)','tan(z^2)','z^5-z+1','cln(z)*csin(z)'.replace('cln','log').replace('csin','sin')],
+    build: COMPLEX_FS, scale:5, center:[0,0], complex:true
+  },
+  {
+    key:'POLAR', lhs:'r =', vars:['th','t'],
+    placeholder:'2 + cos(5 th + t) ... roses, spirals, hearts',
+    hint:'r as a function of angle th (theta). Integer petals, golden spirals, everything round.',
+    examples:['2+cos(5th+t)','th/6','2+sin(th*7)/2+cos(th*13+t)/3','3*abs(cos(th*2.5))','1.5+sin(3th)*cos(t)','exp(sin(th))-2cos(4th)+0.5'],
+    build: POLAR_FS, scale:9, center:[0,0]
+  },
+  {
+    key:'FOURIER', lhs:'y =', vars:['x'],
+    placeholder:'sign(sin(x)) ... watch circles rebuild your equation',
+    hint:'Your function on one period, rebuilt by spinning circles (Fourier series). Every wave is a sum of pure rotations.',
+    examples:['sign(sin(x))','abs(mod(x/pi,2)-1)*2-1','x/pi-floor(x/pi/2)*2-1','sin(x)+sign(cos(3x))/3','exp(sin(x))-1.5'],
+    fourier:true
+  },
+  {
+    key:'SOUND', lhs:'y =', vars:['x','t'],
+    placeholder:'sin(x) + sin(x*1.5)/2 ... x is phase at 440Hz - HEAR your equation',
+    hint:'The equation as sound: x = phase (440 Hz fundamental). Perfect fifth = sin(x*1.5). Press HEAR IT.',
+    examples:['sin(x)','sin(x)+sin(x*1.5)/2','sin(x)+sin(x*2)/2+sin(x*3)/3','sign(sin(x))/3','sin(x+sin(x*0.5)*2)','sin(x)*(1+sin(t*3))/2'],
+    build: SOUND_FS, scale:1, center:[0,0], sound:true
+  },
+  {
+    key:'CONSTANTS', lhs:'', vars:[],
+    placeholder:'',
+    hint:'Portraits of the numbers themselves. PI and E as digit-walks (each digit turns the pen), PHI as golden angle bloom, PRIMES on the Ulam and polar spirals.',
+    constants:true,
+    examples:[] // chips become constant picks
+  },
+];
+
+/* ---------------- state + wiring ---------------- */
+const eqInput = document.getElementById('eq');
+const lhsEl = document.getElementById('lhs');
+const errEl = document.getElementById('err');
+const hintEl = document.getElementById('hint');
+const modesEl = document.getElementById('modes');
+const examplesEl = document.getElementById('examples');
+const soundBtn = document.getElementById('soundbtn');
+const f2d = document.getElementById('fourier');
+const fctx = f2d.getContext('2d');
+
+const CAPTURE = new URLSearchParams(location.search).get('capture') === '1';
+if(CAPTURE) document.body.classList.add('capture');
+
+let mode = MODES[0];
+let prog = null;
+let U = {};
+let view = { scale: 12, cx: 0, cy: 0 };
+let currentJS = null;      // JS fn for fourier/sound
+let fourierCoef = null;    // [{re,im,k}]
+let audio = null, audioNode = null, analyser = null;
+let specArr = new Float32Array(64);
+let constantPick = 'PI';
+let startTime = performance.now();
+
+function setError(msg){
+  if(msg){ errEl.textContent = msg; errEl.classList.add('show'); }
+  else errEl.classList.remove('show');
+}
+
+function buildModeRail(){
+  modesEl.innerHTML = '';
+  for(const m of MODES){
+    const d = document.createElement('div');
+    d.className = 'mode' + (m===mode ? ' on' : '');
+    d.textContent = m.key;
+    d.onclick = () => setMode(m);
+    modesEl.appendChild(d);
+  }
+}
+
+function buildExamples(){
+  examplesEl.innerHTML = '';
+  if(mode.constants){
+    for(const c of ['PI','E','PHI','SQRT2','PRIMES-ULAM','PRIMES-POLAR']){
+      const d = document.createElement('div');
+      d.className = 'ex';
+      d.textContent = c;
+      d.onclick = () => { constantPick = c; renderConstants(); };
+      examplesEl.appendChild(d);
+    }
+    return;
+  }
+  for(const ex of mode.examples){
+    const d = document.createElement('div');
+    d.className = 'ex';
+    d.textContent = ex;
+    d.onclick = () => { eqInput.value = ex; recompile(); };
+    examplesEl.appendChild(d);
+  }
+}
+
+function setMode(m){
+  mode = m;
+  view.scale = m.scale || 12; view.cx = (m.center||[0,0])[0]; view.cy = (m.center||[0,0])[1];
+  lhsEl.textContent = m.lhs;
+  eqInput.placeholder = m.placeholder;
+  hintEl.textContent = m.hint;
+  document.getElementById('eqwrap').style.display = m.constants ? 'none' : 'flex';
+  soundBtn.style.display = m.sound && !CAPTURE ? 'block' : 'none';
+  f2d.style.display = (m.fourier || m.constants) ? 'block' : 'none';
+  canvas.style.display = (m.fourier || m.constants) ? 'none' : 'block';
+  stopAudio();
+  buildModeRail();
+  buildExamples();
+  eqInput.value = m.examples && m.examples.length ? m.examples[0] : '';
+  if(m.constants) renderConstants();
+  else recompile();
+}
+
+function recompile(){
+  const src = eqInput.value.trim();
+  if(mode.constants) return;
+  if(!src){ setError(null); return; }
+  try {
+    // normalize: i -> handled only in complex via (0,1)? keep i unsupported to stay honest
+    const vars = mode.vars;
+    const rpn = parse(src.replace(/theta/g,'th'), vars);
+    if(mode.fourier){
+      currentJS = compileJS(rpn, vars);
+      computeFourier();
+      setError(null);
+      return;
+    }
+    let expr;
+    if(mode.complex){
+      // promote t: in complex GLSL t is vec2
+      expr = compileGLSLComplex(rpn);
+    } else {
+      expr = compileGLSL(rpn);
+    }
+    const fsBody = mode.build(expr);
+    const p = makeProgram(fsBody);
+    if(prog) gl.deleteProgram(prog);
+    prog = p;
+    gl.useProgram(prog);
+    U = {
+      res: gl.getUniformLocation(prog,'u_res'),
+      time: gl.getUniformLocation(prog,'u_time'),
+      center: gl.getUniformLocation(prog,'u_center'),
+      scale: gl.getUniformLocation(prog,'u_scale'),
+      spec: gl.getUniformLocation(prog,'u_spec[0]') || gl.getUniformLocation(prog,'u_spec'),
+    };
+    if(mode.sound){
+      currentJS = compileJS(rpn, vars);
+      if(audio) restartAudio();
+    }
+    setError(null);
+  } catch(e){
+    setError(String(e).replace(/^shader:.*ERROR:\s*/s,'shader ').slice(0,120));
+  }
+}
+
+/* ---------------- fourier room (2D canvas) ---------------- */
+function computeFourier(){
+  const N = 512, K = 48;
+  const f = currentJS;
+  const samples = new Float32Array(N);
+  for(let n=0;n<N;n++){
+    let v = f(n/N*Math.PI*2);
+    if(!isFinite(v)) v = 0;
+    samples[n] = Math.max(-8, Math.min(8, v));
+  }
+  fourierCoef = [];
+  for(let k=1;k<=K;k++){
+    let re=0, im=0;
+    for(let n=0;n<N;n++){
+      const ph = k*n/N*Math.PI*2;
+      re += samples[n]*Math.cos(ph);
+      im += samples[n]*Math.sin(ph);
+    }
+    re = re*2/N; im = im*2/N;
+    if(Math.hypot(re,im) > 1e-4) fourierCoef.push({k, re, im});
+  }
+  fourierCoef.sort((a,b)=>Math.hypot(b.re,b.im)-Math.hypot(a.re,a.im));
+}
+let fTrail = [];
+function drawFourier(t){
+  const W = f2d.width = innerWidth*DPR, H = f2d.height = innerHeight*DPR;
+  f2d.style.width = innerWidth+'px'; f2d.style.height = innerHeight+'px';
+  const ctx = fctx;
+  ctx.fillStyle = '#05050a';
+  ctx.fillRect(0,0,W,H);
+  if(!fourierCoef || !fourierCoef.length) return;
+  const cx = W*0.30, cy = H*0.46, S = Math.min(W,H)*0.11;
+  const ang = t*0.7;
+  ctx.globalCompositeOperation = 'lighter';
+  let x = cx, y = cy;
+  // epicycle chain
+  for(const c of fourierCoef){
+    const A = Math.hypot(c.re, c.im)*S;
+    const ph = Math.atan2(c.re, c.im); // sin-series phase
+    const a = c.k*ang + ph;
+    const nx = x + A*Math.cos(a - Math.PI/2);
+    const ny = y + A*Math.sin(a - Math.PI/2);
+    ctx.strokeStyle = 'rgba(89,180,255,0.35)';
+    ctx.lineWidth = 1.2*DPR;
+    ctx.beginPath(); ctx.arc(x, y, A, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(160,220,255,0.8)';
+    ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(nx,ny); ctx.stroke();
+    x = nx; y = ny;
+  }
+  // pen tip
+  ctx.shadowColor = '#ffcf6a'; ctx.shadowBlur = 18*DPR;
+  ctx.fillStyle = '#ffe9b8';
+  ctx.beginPath(); ctx.arc(x, y, 3.4*DPR, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+  // trail scroll graph
+  fTrail.unshift(y);
+  if(fTrail.length > W*0.5) fTrail.pop();
+  const gx = W*0.46;
+  ctx.strokeStyle = 'rgba(255,207,106,0.5)';
+  ctx.lineWidth = 1.2*DPR;
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(gx, fTrail[0]); ctx.stroke();
+  ctx.strokeStyle = '#ffcf6a';
+  ctx.lineWidth = 2.2*DPR;
+  ctx.shadowColor = '#ffcf6a'; ctx.shadowBlur = 10*DPR;
+  ctx.beginPath();
+  for(let i=0;i<fTrail.length;i++){
+    const px = gx + i;
+    if(i===0) ctx.moveTo(px, fTrail[i]); else ctx.lineTo(px, fTrail[i]);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+/* ---------------- constants room (2D canvas) ---------------- */
+/* pi/e digit spigot (Rabinowitz-Wagon for pi; e by series) - computed once, cached */
+let DIGITS = {};
+function piDigits(n){
+  if(DIGITS.PI) return DIGITS.PI;
+  // spigot: gibbons streaming algorithm using BigInt
+  const out = [];
+  let q=1n, r=180n, t=60n, i=2n;
+  while(out.length < n){
+    const digit = (q*(27n*i-12n)+5n*r) / (5n*t);
+    out.push(Number(digit));
+    const u = 3n*(3n*i+1n)*(3n*i+2n);
+    r = 10n*u*(q*(5n*i-2n)+r-digit*t);
+    q = 10n*q*i*(2n*i-1n);
+    t = t*u;
+    i += 1n;
+  }
+  DIGITS.PI = out;
+  return out;
+}
+function eDigits(n){
+  if(DIGITS.E) return DIGITS.E;
+  // e via high-precision series with BigInt scaling
+  const prec = BigInt(n+10);
+  const scale = 10n ** prec;
+  let sum = 0n, term = scale;
+  for(let k=0n; term > 0n; k++){
+    sum += term;
+    term = term / (k+1n);
+    if(k > 500n) break;
+  }
+  const s = sum.toString(); // "271828..."
+  const out = [];
+  for(let i=0;i<n;i++) out.push(Number(s[i]));
+  DIGITS.E = out;
+  return out;
+}
+function sqrt2Digits(n){
+  if(DIGITS.SQRT2) return DIGITS.SQRT2;
+  const prec = BigInt(2*(n+8));
+  const target = 2n * 10n**prec;
+  // integer sqrt by Newton
+  let x = 10n**(prec/2n + 1n);
+  for(let i=0;i<200;i++){
+    const nx = (x + target/x) >> 1n;
+    if(nx === x) break;
+    x = nx;
+  }
+  const s = x.toString();
+  const out = [];
+  for(let i=0;i<n;i++) out.push(Number(s[i]));
+  DIGITS.SQRT2 = out;
+  return out;
+}
+function primesTo(n){
+  if(DIGITS.PRIMES) return DIGITS.PRIMES;
+  const sieve = new Uint8Array(n+1);
+  const out = [];
+  for(let i=2;i<=n;i++){
+    if(!sieve[i]){ out.push(i); for(let j=i*i;j<=n;j+=i) sieve[j]=1; }
+  }
+  DIGITS.PRIMES = out;
+  return out;
+}
+
+function renderConstants(){
+  const W = f2d.width = innerWidth*DPR, H = f2d.height = innerHeight*DPR;
+  f2d.style.width = innerWidth+'px'; f2d.style.height = innerHeight+'px';
+  const ctx = fctx;
+  ctx.fillStyle = '#05050a';
+  ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation = 'lighter';
+  const label = (txt) => {
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.font = `${13*DPR}px Consolas, monospace`;
+    ctx.fillStyle = 'rgba(150,160,190,0.9)';
+    ctx.fillText(txt, 24*DPR, H - 28*DPR);
+    ctx.globalCompositeOperation = 'lighter';
+  };
+
+  if(constantPick==='PI' || constantPick==='E' || constantPick==='SQRT2'){
+    const digits = constantPick==='PI' ? piDigits(6000) : constantPick==='E' ? eDigits(6000) : sqrt2Digits(6000);
+    /* digit walk: each digit d = a turn of d * 36 degrees, constant step.
+       The number's own digits steer the pen - this is what pi LOOKS like. */
+    let x=0, y=0, a=0;
+    const pts = [{x,y}];
+    for(const d of digits){
+      a += (d/10) * Math.PI*2;
+      x += Math.cos(a); y += Math.sin(a);
+      pts.push({x,y});
+    }
+    let minx=1e9,maxx=-1e9,miny=1e9,maxy=-1e9;
+    for(const p of pts){ minx=Math.min(minx,p.x);maxx=Math.max(maxx,p.x);miny=Math.min(miny,p.y);maxy=Math.max(maxy,p.y); }
+    const sc = Math.min(W/(maxx-minx+4), H/(maxy-miny+4))*0.86;
+    const ox = W/2 - (minx+maxx)/2*sc, oy = H/2 - (miny+maxy)/2*sc;
+    ctx.lineWidth = 1.1*DPR;
+    for(let i=1;i<pts.length;i++){
+      const hue = i/pts.length;
+      ctx.strokeStyle = `hsla(${200+hue*160},90%,${55+20*Math.sin(i*0.01)}%,0.55)`;
+      ctx.beginPath();
+      ctx.moveTo(pts[i-1].x*sc+ox, pts[i-1].y*sc+oy);
+      ctx.lineTo(pts[i].x*sc+ox, pts[i].y*sc+oy);
+      ctx.stroke();
+    }
+    const names = {PI:'π', E:'e', SQRT2:'√2'};
+    label(`${names[constantPick]} - first 6,000 digits as a walk: each digit turns the pen by digit/10 of a full circle. Structure with no pattern: this is what ${names[constantPick]} looks like.`);
+  }
+  else if(constantPick==='PHI'){
+    /* golden-angle bloom: n dots at angle n*137.507..deg, radius sqrt(n) */
+    const N = 1600;
+    const ga = Math.PI*(3-Math.sqrt(5));
+    const sc = Math.min(W,H)*0.47/Math.sqrt(N);
+    for(let n=0;n<N;n++){
+      const a = n*ga, r = Math.sqrt(n)*sc;
+      const x = W/2 + r*Math.cos(a), y = H/2 + r*Math.sin(a);
+      const sz = (1.2 + 2.6*n/N)*DPR;
+      ctx.fillStyle = `hsla(${45+ (n%21===0? -20: 0)},95%,${60+25*Math.sin(n*0.02)}%,0.85)`;
+      ctx.shadowColor = '#ffcf6a'; ctx.shadowBlur = 6*DPR;
+      ctx.beginPath(); ctx.arc(x,y,sz,0,Math.PI*2); ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    label('φ - 1,600 seeds placed by the golden angle (137.5°), radius √n. The sunflower algorithm: most irrational number = most even packing.');
+  }
+  else if(constantPick==='PRIMES-ULAM'){
+    const N = 262144; // 512x512 spiral
+    const primes = new Uint8Array(N+1);
+    { const s = new Uint8Array(N+1);
+      for(let i=2;i<=N;i++){ if(!s[i]){ primes[i]=1; for(let j=i*i;j<=N;j+=i) s[j]=1; } } }
+    const side = 512, cell = Math.min(W,H)/side*0.94;
+    const ox = (W-side*cell)/2, oy = (H-side*cell)/2;
+    let x=side/2, y=side/2, dx=1, dy=0, steps=1, stepCount=0, turns=0;
+    ctx.fillStyle = 'rgba(89,242,255,0.9)';
+    for(let n=1;n<=N;n++){
+      if(primes[n]){
+        ctx.fillRect(ox+x*cell, oy+y*cell, Math.max(cell,1), Math.max(cell,1));
+      }
+      x += dx; y += dy;
+      if(++stepCount===steps){ stepCount=0; const t=dx; dx=-dy; dy=t; if(++turns%2===0) steps++; }
+    }
+    label('The primes on the Ulam spiral: integers wound into a square spiral, primes lit. The diagonals are real - nobody fully knows why.');
+  }
+  else if(constantPick==='PRIMES-POLAR'){
+    const primes = primesTo(120000);
+    const maxP = primes[primes.length-1];
+    const sc = Math.min(W,H)*0.48/Math.sqrt(maxP);
+    for(const p of primes){
+      /* plot (r,theta) = (p, p) in polar - the galaxy spirals emerge */
+      const r = Math.sqrt(p)*sc, a = p;
+      const x = W/2 + r*Math.cos(a), y = H/2 + r*Math.sin(a);
+      ctx.fillStyle = `hsla(${260 + (p%6)*18},85%,68%,0.75)`;
+      ctx.fillRect(x, y, 1.4*DPR, 1.4*DPR);
+    }
+    label('Every prime p plotted at polar point (p, p). The spiral arms and rays are consequences of 2π rationality - order hiding inside the primes.');
+  }
+}
+
+/* ---------------- sound engine ---------------- */
+function startAudio(){
+  if(!currentJS) return;
+  stopAudio();
+  audio = new (window.AudioContext||window.webkitAudioContext)();
+  const sr = audio.sampleRate;
+  const node = audio.createScriptProcessor(2048, 0, 1);
+  let phase = 0;
+  const f = currentJS;
+  node.onaudioprocess = (ev) => {
+    const out = ev.outputBuffer.getChannelData(0);
+    const t = audio.currentTime;
+    for(let i=0;i<out.length;i++){
+      const x = phase;
+      let v = f(x, t + i/sr);
+      if(!isFinite(v)) v = 0;
+      out[i] = Math.max(-1, Math.min(1, v*0.35));
+      phase += 440*Math.PI*2/sr;
+      if(phase > Math.PI*2*440*10) phase -= Math.PI*2*440*10; // keep phase bounded (period-safe for harmonics of 440)
+    }
+  };
+  analyser = audio.createAnalyser();
+  analyser.fftSize = 256;
+  node.connect(analyser);
+  analyser.connect(audio.destination);
+  audioNode = node;
+  soundBtn.textContent = '■ STOP';
+}
+function stopAudio(){
+  if(audio){ try{ audio.close(); }catch(e){} }
+  audio = null; audioNode = null; analyser = null;
+  specArr.fill(0);
+  soundBtn.textContent = '▶ HEAR IT';
+}
+function restartAudio(){ if(audio) startAudio(); }
+soundBtn.onclick = () => { audio ? stopAudio() : startAudio(); };
+
+/* ---------------- interaction: pan/zoom ---------------- */
+let dragging = false, lastPos = null;
+canvas.addEventListener('pointerdown', e => { dragging = true; lastPos = [e.clientX, e.clientY]; });
+addEventListener('pointerup', () => dragging = false);
+addEventListener('pointermove', e => {
+  if(!dragging || mode.fourier || mode.constants) return;
+  const dx = e.clientX - lastPos[0], dy = e.clientY - lastPos[1];
+  lastPos = [e.clientX, e.clientY];
+  view.cx -= dx / innerHeight * view.scale;
+  view.cy += dy / innerHeight * view.scale;
+});
+addEventListener('wheel', e => {
+  if(mode.fourier || mode.constants) return;
+  if(e.target === eqInput) return;
+  view.scale *= e.deltaY > 0 ? 1.12 : 1/1.12;
+  view.scale = Math.max(0.05, Math.min(500, view.scale));
+}, {passive:true});
+
+/* ---------------- main loop ---------------- */
+function resize(){
+  canvas.width = innerWidth*DPR; canvas.height = innerHeight*DPR;
+}
+addEventListener('resize', resize);
+resize();
+
+canvas.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  document.getElementById('lost').style.display='flex';
+});
+
+const specBins = new Uint8Array(128);
+function frame(){
+  requestAnimationFrame(frame);
+  const t = (performance.now() - startTime)/1000;
+  if(mode.fourier){ drawFourier(t); return; }
+  if(mode.constants){ return; } // static portrait, redrawn on pick/resize
+  if(!prog || !gl) return;
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.useProgram(prog);
+  gl.uniform2f(U.res, canvas.width, canvas.height);
+  gl.uniform1f(U.time, t);
+  gl.uniform2f(U.center, view.cx, view.cy);
+  gl.uniform1f(U.scale, view.scale);
+  if(mode.sound && U.spec){
+    if(analyser){
+      analyser.getByteFrequencyData(specBins);
+      for(let i=0;i<64;i++) specArr[i] = specBins[i]/255;
+    } else {
+      for(let i=0;i<64;i++) specArr[i] *= 0.94;
+    }
+    gl.uniform1fv(U.spec, specArr);
+  }
+  bindQuad();
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+requestAnimationFrame(frame);
+
+let compileTimer = null;
+eqInput.addEventListener('input', () => {
+  clearTimeout(compileTimer);
+  compileTimer = setTimeout(recompile, 180); // live: renders as you type
+});
+addEventListener('resize', () => { if(mode.constants) renderConstants(); });
+
+/* ---------------- window.studio contract ---------------- */
+window.studio = {
+  presets: MODES.map(m => ({name:m.key})),
+  setPreset(i){ setMode(MODES[Math.max(0,Math.min(MODES.length-1,i))]); },
+  setEquation(s){ eqInput.value = s; recompile(); },
+  params: { get mode(){ return mode.key; }, view }
+};
+
+/* boot */
+buildModeRail();
+setMode(CAPTURE ? MODES[2] /* COMPLEX = the flagship portrait */ : MODES[0]);
+</script>
+</body>
+</html>
