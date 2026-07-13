@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Temple: Raymarched Fractal Architecture Flythrough | Near-Phi</title>
+<meta name="description" content="TEMPLE: an infinite raymarched fractal-architecture flythrough. Menger sponge corridors, Kleinian limit-set vaults and tetrahedral ascents, real-time in your browser.">
+<link rel="canonical" href="https://near-phi.github.io/corridor.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="Temple: Raymarched Fractal Architecture Flythrough">
+<meta property="og:description" content="An infinite raymarched fractal-architecture flythrough through Menger corridors, Kleinian vaults and tetrahedral ascents, real-time in your browser.">
+<meta property="og:url" content="https://near-phi.github.io/corridor.html">
+<meta property="og:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<meta name="twitter:title" content="Temple: Raymarched Fractal Architecture Flythrough">
+<meta name="twitter:description" content="An infinite raymarched fractal-architecture flythrough, real-time in your browser.">
+<meta name="twitter:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Temple",
+  "url": "https://near-phi.github.io/corridor.html",
+  "description": "A browser-based raymarched fractal-architecture flythrough: Menger sponge corridors, Kleinian limit-set vaults and tetrahedral fold ascents, rendered in real time with adaptive quality.",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isPartOf": { "@type": "WebSite", "name": "Near-Phi", "url": "https://near-phi.github.io/" },
+  "publisher": { "@type": "Organization", "name": "Near-Phi", "url": "https://near-phi.github.io/" }
+}
+</script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #000; color: #e0e0e0; font-family: 'Consolas', 'Monaco', monospace; overflow: hidden; height: 100%; }
+  canvas { display: block; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+
+  #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; transition: opacity 1s ease; }
+  #ui.faded { opacity: 0; }
+
+  #title {
+    position: fixed; top: 22px; left: 26px; letter-spacing: 6px; font-size: 13px;
+    color: rgba(255,207,106,0.85); text-shadow: 0 0 12px rgba(255,207,106,0.5);
+    font-weight: 600;
+  }
+  #title span { display: block; font-size: 9px; letter-spacing: 3px; color: rgba(160,220,255,0.55); margin-top: 4px; font-weight: 400; }
+
+  #dots { position: fixed; bottom: 22px; left: 26px; display: flex; gap: 10px; pointer-events: auto; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3); cursor: pointer; transition: all 0.25s;
+  }
+  .dot:hover { background: rgba(255,207,106,0.5); }
+  .dot.active { background: #ffcf6a; box-shadow: 0 0 10px #ffcf6a; border-color: #ffcf6a; }
+
+  #hint {
+    position: fixed; bottom: 22px; right: 26px; font-size: 10px; letter-spacing: 1px;
+    color: rgba(200,200,220,0.4); text-align: right; line-height: 1.6;
+  }
+
+  #fallback {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: #000; color: #f66; font-size: 14px; text-align: center; padding: 40px; z-index: 100;
+  }
+  #ctxlost {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.9); color: #ffcf6a; font-size: 16px; text-align: center; z-index: 200;
+    letter-spacing: 2px;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <div id="title">TEMPLE<span>RAYMARCHED FRACTAL ARCHITECTURE</span></div>
+  <div id="dots">
+    <div class="dot active" data-i="0" title="Menger Sanctum"></div>
+    <div class="dot" data-i="1" title="Kleinian Vault"></div>
+    <div class="dot" data-i="2" title="Sierpinski Ascent"></div>
+  </div>
+  <div id="hint">DRAG TO LOOK &middot; SCROLL TO CHANGE SPEED &middot; CLICK DOT FOR WORLD</div>
+</div>
+
+<div id="fallback">WebGL2 is not available in this browser.<br>Temple needs a GPU-accelerated browser to render.</div>
+<div id="ctxlost">GPU CONTEXT LOST &mdash; reload to re-enter TEMPLE</div>
+
+<!-- ==================== VERTEX SHADER ==================== -->
+<script id="vs" type="x-shader/x-vertex">#version 300 es
+in vec2 a_pos;
+void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }
+</script>
+
+<!-- ==================== FRAGMENT SHADER (raymarcher) ==================== -->
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+
+uniform vec2  u_resolution;
+uniform float u_time;
+uniform int   u_preset;      // 0 menger, 1 kleinian, 2 sierpinski
+uniform int   u_maxSteps;    // hard-capped <=110
+uniform vec2  u_lookOffset;  // drag-driven gaze offset (radians)
+uniform float u_speedMul;    // scroll-driven dolly speed multiplier
+
+out vec4 fragColor;
+
+#define PI 3.14159265359
+#define TAU 6.28318530718
+
+// ---------- utility ----------
+mat2 rot2(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
+
+float hash11(float p){ p = fract(p*0.1031); p*=p+33.33; p*=p+p; return fract(p); }
+float hash21(vec2 p){ vec3 p3=fract(vec3(p.xyx)*0.1031); p3+=dot(p3,p3.yzx+33.33); return fract((p3.x+p3.y)*p3.z); }
+
+float noise1(float x){
+  float i = floor(x), f = fract(x);
+  float a = hash11(i), b = hash11(i+1.0);
+  f = f*f*(3.0-2.0*f);
+  return mix(a,b,f);
+}
+
+// ---------- camera path: smooth noise-modulated dolly, periodic (loops every PERIOD s) ----------
+const float PERIOD = 20.0;
+
+vec3 pathPosFor(float t, int preset){
+  float u = t / PERIOD; // 0..1 over loop
+  float ang = u * TAU;
+  // lissajous sway around a forward-advancing spine; forward distance is periodic in the
+  // *fractal domain repetition* so travel never stops even though position loops.
+  float sway1 = sin(ang*1.2);
+  float sway2 = sin(ang*0.8 + 1.3);
+  vec3 p;
+  if (preset == 2){
+    // ascent: rise on Y, gentle circular drift on XZ (kept slow relative to rise speed
+    // so the forward tangent never swings far off-axis; amplitude kept tiny to match
+    // the narrow ~0.55-radius shaft carved through the fractal)
+    p.x = sway1 * 0.10 + sin(ang*3.0)*0.015;
+    p.z = sway2 * 0.10 + cos(ang*2.5)*0.015;
+    p.y = t * 1.0;
+  } else {
+    // sway amplitude and frequency kept low relative to forward speed (1.0/s) so the
+    // path's lateral VELOCITY stays small and fwd never swings far off the corridor axis
+    p.x = sway1 * 0.18;
+    p.y = sway2 * 0.10;
+    p.z = t * 1.0; // constant-speed forward march, domain-repeated so it's an infinite hallway
+  }
+  return p;
+}
+
+vec3 pathTangentFor(float t, int preset){
+  float e = 0.05;
+  vec3 a = pathPosFor(t-e, preset), b = pathPosFor(t+e, preset);
+  return normalize(b-a);
+}
+
+// ---------- domain repetition helpers ----------
+vec3 repeat(vec3 p, vec3 c){ return mod(p+0.5*c, c) - 0.5*c; }
+float repeat1(float p, float c){ return mod(p+0.5*c, c) - 0.5*c; }
+
+// ================= PRESET 0: MENGER SANCTUM =================
+// Classic Menger-sponge corridor: a square hallway (box) with a Menger lattice
+// carved into its cross-section, repeated forever along Z. 4 iterations, TDR-safe.
+float sdBox(vec3 p, vec3 b){
+  vec3 d = abs(p) - b;
+  return length(max(d,0.0)) + min(max(d.x,max(d.y,d.z)),0.0);
+}
+
+float mengerCorridor(vec3 p, out float trap){
+  float cell = 8.0;
+  vec3 q = p;
+  q.z = repeat1(p.z, cell);
+
+  // solid outer block that we will hollow out -> gives us walls to light
+  float outer = sdBox(q, vec3(3.4, 3.4, 3.9));
+
+  // hollow the main square hallway through the block (wide, camera-safe)
+  float hallway = sdBox(q, vec3(2.3, 2.3, 100.0));
+  float d = max(outer, -hallway);
+
+  // Menger-style lattice openings: a 3x3 grid of square shafts punched straight
+  // through the wall thickness on each face, repeating along the corridor length.
+  // Bounded to a thin shell just outside the hallway so the open corridor air is
+  // never touched (fixes the earlier bug where holes leaked into the hallway).
+  vec3 lp = q;
+  lp.z = mod(lp.z, 2.0) - 1.0; // repeat holes every 2 units along the corridor
+  vec2 gridX = mod(vec2(lp.y, lp.z) + 1.0, 1.6) - 0.8; // holes through +/-X walls
+  vec2 gridY = mod(vec2(lp.x, lp.z) + 1.0, 1.6) - 0.8; // holes through +/-Y walls (ceiling/floor)
+  float holeX = length(max(abs(gridX) - 0.35, 0.0)) - 0.05;
+  float holeY = length(max(abs(gridY) - 0.35, 0.0)) - 0.05;
+  float shellX = abs(abs(q.x) - 2.75) - 0.55; // only near the +/-X wall thickness
+  float shellY = abs(abs(q.y) - 2.75) - 0.55; // only near the +/-Y wall thickness
+  float cutX = max(holeX, shellX);
+  float cutY = max(holeY, shellY);
+  float cut = min(cutX, cutY);
+  d = max(d, -cut);
+
+  trap = clamp(min(length(gridX), length(gridY)) * 0.6, 0.0, 1.0);
+
+  return d;
+}
+
+// ================= PRESET 1: KLEINIAN VAULT =================
+// Mandelbox-style amazing-surface IFS (bounded ~6 iterations) sculpted into a
+// repeating cathedral chamber envelope so it reads as vaults, not free-floating noise.
+float kleinianVault(vec3 p, out float trap){
+  // Cell is elongated along Z (the travel axis) so the camera dollies through a
+  // sequence of distinct fractal chambers rather than sitting inside dense dust.
+  vec3 cell = vec3(7.0, 7.0, 10.0);
+  vec3 q = repeat(p, cell);
+
+  // classic bounded Mandelbox DE, moderate scale for open cavities (not dust-dense)
+  vec3 w = q;
+  float scale = -1.8;
+  float dr = 1.0;
+  trap = 1e5;
+  for (int i = 0; i < 6; i++){
+    w = clamp(w, -1.0, 1.0) * 2.0 - w;
+    float r2 = dot(w,w);
+    if (r2 < 0.4){ float t = 4.0; w *= t; dr *= t; }
+    else if (r2 < 1.0){ float t = 1.0/r2; w *= t; dr *= t; }
+    w = w*scale + q;
+    dr = dr*abs(scale) + 1.0;
+    trap = min(trap, length(w)*0.28);
+  }
+  float bulb = length(w)/abs(dr) - 0.015;
+
+  // Intersect the fractal with a solid outer block (so it has finite wall thickness),
+  // then hollow out a round nave running along Z so the camera flies through open air
+  // with fractal detail only visible where it borders the hollowed chamber walls.
+  float outerBlock = sdBox(q, vec3(3.4, 3.4, 4.9));
+  float solid = max(bulb, outerBlock);
+
+  vec2 xz = vec2(q.x, q.z);
+  float naveHollow = length(xz) - 2.6; // round nave, negative = inside open air
+  float d = max(solid, -naveHollow);
+  return d;
+}
+
+// ================= PRESET 2: SIERPINSKI ASCENT =================
+// Tetrahedral (Sierpinski) fold IFS, standard folded formula, 8 iterations bounded.
+// Camera rises through a repeating vertical shaft so the fractal reads as an ascending atrium.
+float sierpinskiAscent(vec3 p, out float trap){
+  vec3 cell = vec3(10.0, 10.0, 10.0);
+  vec3 q = p;
+  q.y = repeat1(p.y, cell.y); // repeat along the rise axis so ascent never ends
+  q.x = repeat1(p.x, cell.x);
+  q.z = repeat1(p.z, cell.z);
+
+  vec3 z = q;
+  float scale = 2.0;
+  float dr = 1.0;
+  trap = 1e5;
+  for (int i = 0; i < 8; i++){
+    if (z.x+z.y < 0.0) z.xy = -z.yx;
+    if (z.x+z.z < 0.0) z.xz = -z.zx;
+    if (z.y+z.z < 0.0) z.yz = -z.zy;
+    z = z*scale - (scale-1.0);
+    dr *= scale;
+    trap = min(trap, dot(z,z)*0.02);
+  }
+  float fractal = (length(z) - 1.6) / dr;
+
+  // Hollow a small round shaft through the fractal so the camera ascends through
+  // open air close to the actual detailed fractal zone (its zero-crossings cluster
+  // within radius ~1 of the cell center), with tetrahedral fold detail on the walls.
+  float shaftHollow = length(vec2(q.x, q.z)) - 0.55; // negative = inside open shaft
+  float d = max(fractal, -shaftHollow);
+  return d;
+}
+
+float map(vec3 p, out float trap){
+  if (u_preset == 0) return mengerCorridor(p, trap);
+  if (u_preset == 1) return kleinianVault(p, trap);
+  return sierpinskiAscent(p, trap);
+}
+
+float mapS(vec3 p){ float t; return map(p,t); }
+
+vec3 calcNormal(vec3 p){
+  vec2 e = vec2(0.0015, 0.0);
+  return normalize(vec3(
+    mapS(p+e.xyy)-mapS(p-e.xyy),
+    mapS(p+e.yxy)-mapS(p-e.yxy),
+    mapS(p+e.yyx)-mapS(p-e.yyx)
+  ));
+}
+
+// cheap 2-tap SDF ambient occlusion
+float calcAO(vec3 p, vec3 n){
+  float d1 = 0.22, d2 = 0.55;
+  float o1 = mapS(p + n*d1);
+  float o2 = mapS(p + n*d2);
+  float ao = clamp(o1/d1, 0.0, 1.0)*0.5 + clamp(o2/d2, 0.0, 1.0)*0.5;
+  return clamp(ao, 0.0, 1.0);
+}
+
+// Two anchor hues per world (key-lit vs fill-lit); trap only nudges the mix so the
+// dominant read always comes from lighting geometry, never a flat fractal-coordinate wash.
+vec3 hueA(int preset){ // key-light (warm) anchor
+  if (preset == 0) return vec3(0.95, 0.62, 0.20);   // deep gold
+  if (preset == 1) return vec3(0.52, 0.20, 0.85);   // deep violet
+  return vec3(0.95, 0.26, 0.05);                     // ember red
+}
+vec3 hueB(int preset){ // fill-light (cool) anchor
+  if (preset == 0) return vec3(0.05, 0.28, 0.55);    // deep cyan-blue
+  if (preset == 1) return vec3(0.03, 0.42, 0.40);    // deep teal
+  return vec3(0.65, 0.45, 0.10);                     // dim amber-ember
+}
+
+vec3 paletteFor(int preset, float trap, float depth){
+  float m = smoothstep(0.2, 0.8, trap);
+  return mix(hueA(preset), hueB(preset), m*0.35); // trap only nudges, doesn't dominate
+}
+
+vec3 fogColorFor(int preset){
+  if (preset == 0) return vec3(0.10, 0.07, 0.05);
+  if (preset == 1) return vec3(0.03, 0.03, 0.07);
+  return vec3(0.09, 0.03, 0.015);
+}
+
+// ACES-ish filmic tonemap
+vec3 tonemapACES(vec3 x){
+  float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5*u_resolution) / u_resolution.y;
+
+  float t = u_time * 0.85 * u_speedMul;
+
+  vec3 ro = pathPosFor(t, u_preset);
+  vec3 fwd = pathTangentFor(t, u_preset);
+  vec3 worldUp = (u_preset == 2) ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+  if (abs(dot(fwd, worldUp)) > 0.98) worldUp = vec3(1.0, 0.0, 0.0);
+  vec3 right = normalize(cross(fwd, worldUp));
+  vec3 up = normalize(cross(right, fwd));
+
+  // gentle piloted sway (roll + tiny look wobble) layered on top of tangent-following
+  float sway = sin(t*0.6)*0.08 + sin(t*1.7+2.0)*0.03;
+  right = normalize(right + up*sway*0.3);
+
+  // drag-driven look offset
+  float yaw = u_lookOffset.x, pitch = u_lookOffset.y;
+  vec3 dir = normalize(fwd + right*(uv.x + yaw) + up*(uv.y + pitch));
+
+  // roll the frame a touch for cinematic feel
+  float roll = sin(t*0.31)*0.06;
+  vec2 rr = rot2(roll) * uv;
+  dir = normalize(fwd + right*(rr.x + yaw) + up*(rr.y + pitch));
+
+  vec3 p = ro;
+  float travelled = 0.0;
+  float trapAcc = 1e5;
+  bool hit = false;
+  int stepsTaken = 0;
+
+  const float MAXDIST = 40.0;
+
+  for (int i = 0; i < 110; i++){
+    if (i >= u_maxSteps) break;
+    stepsTaken = i;
+    float trap;
+    float d = map(p, trap);
+    if (d < 0.0015){ hit = true; trapAcc = trap; break; }
+    if (travelled > MAXDIST) break; // bail on distance (TDR safety)
+    float step = d * 0.85;
+    travelled += step;
+    p += dir * step;
+    trapAcc = min(trapAcc, trap);
+  }
+
+  vec3 fogCol = fogColorFor(u_preset);
+  float fogAmt = 1.0 - exp(-travelled*travelled*0.0042);
+
+  vec3 col;
+  if (hit){
+    vec3 n = calcNormal(p);
+    float ao = calcAO(p, n);
+
+    // key light: warm directional, oscillating slightly like it's piloted through a live space
+    vec3 keyDir = normalize(vec3(0.4 + sin(t*0.4)*0.15, 0.85, -0.3));
+    float diff = clamp(dot(n, keyDir), 0.0, 1.0);
+    float backDiff = clamp(dot(n, -keyDir), 0.0, 1.0);
+
+    // Two-tone architectural lighting: key-lit faces read warm (gold/violet/ember),
+    // faces turned away read cool (cyan/teal/amber) via the fill light. This guarantees
+    // strong hue separation driven by surface geometry, not just fractal coordinates.
+    vec3 warm = hueA(u_preset);
+    vec3 cool = hueB(u_preset);
+    vec3 albedo = paletteFor(u_preset, trapAcc, travelled);
+
+    // moodier grade: dimmer warm key, stronger cool fill, deeper shadows —
+    // the flat-mustard first cut read as unlit CGI, not a temple
+    vec3 baseCol = warm * (diff*diff*1.1 + 0.03) * ao;
+    baseCol += cool * (backDiff*0.8 + 0.14) * ao * 1.15;
+    baseCol *= mix(vec3(1.0), albedo, 0.4); // subtle trap tint on top
+
+    // orbit-trap emissive veins glowing through lattice/limit-set structure
+    float veinGlow = pow(clamp(1.0 - trapAcc*1.3, 0.0, 1.0), 2.2);
+    baseCol += warm * veinGlow * 1.0;
+
+    // fake god-rays: brighten where normal faces roughly toward key light and depth is mid-range
+    float rays = pow(diff, 4.0) * clamp(1.0 - travelled/MAXDIST, 0.0, 1.0);
+    baseCol += vec3(1.0,0.85,0.55) * rays * 0.3;
+
+    col = mix(baseCol, fogCol, clamp(fogAmt,0.0,1.0));
+  } else {
+    // sky/void: subtle gradient + fog glow so misses aren't flat black
+    float g = clamp(1.0 - length(uv)*0.7, 0.0, 1.0);
+    col = fogCol * (0.6 + 0.4*g);
+    col = mix(col, fogCol*1.6, fogAmt*0.4);
+  }
+
+  // distance fog glow tint per preset (cheap emissive haze)
+  vec3 glowTint = (u_preset==0) ? vec3(1.0,0.8,0.4) : (u_preset==1) ? vec3(0.6,0.4,1.0) : vec3(1.0,0.5,0.15);
+  col += glowTint * 0.05 * (1.0 - exp(-travelled*0.05));
+
+  // chromatic aberration near edges (UV units, per scar-tissue rule)
+  float edge = length(uv);
+  float ca = 0.006 * smoothstep(0.25, 0.9, edge);
+  // approximate by nudging channels along radial direction using screen-space reconstruction
+  vec2 dirUV = edge > 0.0001 ? uv/edge : vec2(0.0);
+  col.r *= 1.0 + ca*1.5;
+  col.b *= 1.0 - ca*1.5;
+
+  // vignette
+  col *= 1.0 - 0.4*smoothstep(0.55, 1.3, edge);
+
+  // saturation boost (push toward the neon-vivid genre standard, never mid-gray)
+  float lum = dot(col, vec3(0.299,0.587,0.114));
+  col = mix(vec3(lum), col, 1.25);
+
+  // tonemap + bloom (cheap: boost highlights, glow already layered from trap/rays)
+  vec3 bloom = col * col * 0.18;
+  col = tonemapACES(col*1.05 + bloom);
+
+  // film grain
+  float grain = (hash21(gl_FragCoord.xy + fract(u_time)*971.0) - 0.5) * 0.045;
+  col += grain;
+
+  col = clamp(col, 0.0, 1.0);
+  fragColor = vec4(col, 1.0);
+}
+</script>
+
+<script>
+(function(){
+  const canvas = document.getElementById('gl');
+  const fallbackEl = document.getElementById('fallback');
+  const ctxLostEl = document.getElementById('ctxlost');
+
+  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+  if (!gl) {
+    fallbackEl.style.display = 'flex';
+    return;
+  }
+
+  function compile(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+      console.error('Shader compile error:', gl.getShaderInfoLog(s));
+      return null;
+    }
+    return s;
+  }
+
+  const vsSrc = document.getElementById('vs').textContent;
+  const fsSrc = document.getElementById('fs').textContent;
+  const vs = compile(gl.VERTEX_SHADER, vsSrc);
+  const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+    console.error('Program link error:', gl.getProgramInfoLog(prog));
+    fallbackEl.textContent = 'Shader failed to compile.';
+    fallbackEl.style.display = 'flex';
+    return;
+  }
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const aPos = gl.getAttribLocation(prog, 'a_pos');
+
+  const uRes = gl.getUniformLocation(prog, 'u_resolution');
+  const uTime = gl.getUniformLocation(prog, 'u_time');
+  const uPreset = gl.getUniformLocation(prog, 'u_preset');
+  const uMaxSteps = gl.getUniformLocation(prog, 'u_maxSteps');
+  const uLookOffset = gl.getUniformLocation(prog, 'u_lookOffset');
+  const uSpeedMul = gl.getUniformLocation(prog, 'u_speedMul');
+
+  // ---------------- TDR-safe adaptive quality ----------------
+  const MAX_STEPS_HARD_CAP = 110;
+  let internalScale = 0.75;   // start at 0.75x internal res per spec
+  let maxSteps = MAX_STEPS_HARD_CAP;
+  const MIN_SCALE = 0.35;
+  const MIN_STEPS = 50;
+  let frameEmaMs = 12;
+
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let cssW = window.innerWidth, cssH = window.innerHeight;
+
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cssW = window.innerWidth; cssH = window.innerHeight;
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    const w = Math.max(2, Math.floor(cssW * dpr * internalScale));
+    const h = Math.max(2, Math.floor(cssH * dpr * internalScale));
+    if (canvas.width !== w || canvas.height !== h){
+      canvas.width = w; canvas.height = h;
+      gl.viewport(0, 0, w, h);
+    }
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------------- state ----------------
+  const params = { preset: 0, speed: 1.0 };
+  let lookOffset = { x: 0, y: 0 };
+  let dragging = false, dragStart = {x:0,y:0}, lookStart = {x:0,y:0};
+  let clock = 0; // path time, advances with speed
+  let lastNow = performance.now();
+  let contextLost = false;
+
+  const dots = Array.from(document.querySelectorAll('.dot'));
+  function setPreset(i){
+    params.preset = ((i % 3) + 3) % 3;
+    dots.forEach((d,idx)=> d.classList.toggle('active', idx===params.preset));
+  }
+  dots.forEach(d => d.addEventListener('click', () => setPreset(parseInt(d.dataset.i))));
+
+  // ---------------- drag = look, scroll = dolly speed ----------------
+  canvas.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    dragStart = { x: e.clientX, y: e.clientY };
+    lookStart = { x: lookOffset.x, y: lookOffset.y };
+    canvas.setPointerCapture(e.pointerId);
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = (e.clientX - dragStart.x) / cssW;
+    const dy = (e.clientY - dragStart.y) / cssH;
+    lookOffset.x = lookStart.x - dx * 1.4;
+    lookOffset.y = lookStart.y + dy * 1.4;
+    lookOffset.x = Math.max(-0.9, Math.min(0.9, lookOffset.x));
+    lookOffset.y = Math.max(-0.6, Math.min(0.6, lookOffset.y));
+  });
+  window.addEventListener('pointerup', (e) => {
+    dragging = false;
+    try { canvas.releasePointerCapture(e.pointerId); } catch(err){}
+  });
+
+  window.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    params.speed = Math.max(0.15, Math.min(4.0, params.speed - e.deltaY * 0.001));
+  }, { passive: false });
+
+  // ---------------- idle fade UI ----------------
+  const ui = document.getElementById('ui');
+  let idleTimer = null;
+  function wake(){
+    ui.classList.remove('faded');
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => ui.classList.add('faded'), 3000);
+  }
+  ['pointerdown','pointermove','wheel','keydown'].forEach(ev => window.addEventListener(ev, wake, {passive:false}));
+  wake();
+
+  // ---------------- context loss handling ----------------
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    contextLost = true;
+    ctxLostEl.style.display = 'flex';
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    contextLost = false;
+    ctxLostEl.style.display = 'none';
+    location.reload();
+  });
+
+  // ---------------- capture mode ----------------
+  const urlParams = new URLSearchParams(location.search);
+  const capture = urlParams.get('capture') === '1';
+  if (capture){
+    document.getElementById('ui').style.display = 'none';
+    setPreset(0);
+  }
+
+  // ---------------- main loop with adaptive TDR-safe quality ----------------
+  function frame(now){
+    requestAnimationFrame(frame);
+    if (contextLost) return;
+
+    const dtMs = now - lastNow;
+    lastNow = now;
+    const dt = Math.min(dtMs / 1000, 0.05);
+    clock += dt * params.speed;
+
+    const t0 = performance.now();
+
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uTime, clock);
+    gl.uniform1i(uPreset, params.preset);
+    gl.uniform1i(uMaxSteps, maxSteps);
+    gl.uniform2f(uLookOffset, lookOffset.x, lookOffset.y);
+    gl.uniform1f(uSpeedMul, params.speed);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.finish ? null : null; // avoid forcing sync every frame; rely on timing EMA instead
+
+    const dtFrame = performance.now() - t0;
+    frameEmaMs = frameEmaMs * 0.9 + dtFrame * 0.1;
+
+    // Adaptive TDR-safe degrade: if frame EMA > 15ms, drop internal res first, then steps.
+    if (frameEmaMs > 15.0){
+      if (internalScale > MIN_SCALE){
+        internalScale = Math.max(MIN_SCALE, internalScale - 0.05);
+        resize();
+      } else if (maxSteps > MIN_STEPS){
+        maxSteps = Math.max(MIN_STEPS, maxSteps - 8);
+      }
+    } else if (frameEmaMs < 9.0){
+      // recover quality gently when headroom returns
+      if (maxSteps < MAX_STEPS_HARD_CAP){
+        maxSteps = Math.min(MAX_STEPS_HARD_CAP, maxSteps + 4);
+      } else if (internalScale < 0.75){
+        internalScale = Math.min(0.75, internalScale + 0.03);
+        resize();
+      }
+    }
+  }
+  requestAnimationFrame(frame);
+
+  // ---------------- window.studio API ----------------
+  window.studio = {
+    presets: ['Menger Sanctum', 'Kleinian Vault', 'Sierpinski Ascent'],
+    setPreset: setPreset,
+    params: params,
+  };
+})();
+</script>
+
+<div id="near-phi-badge" style="position:fixed;bottom:10px;right:10px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(10,10,15,.82);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 12px;font:600 11px/1.2 'Segoe UI',system-ui,sans-serif;backdrop-filter:blur(4px)">
+  <a href="https://near-phi.github.io/" style="color:#c8c8d8;text-decoration:none">Near<span style="color:#4a9eff">Phi</span></a>
+  <span style="color:#3a3a4a">|</span>
+  <a href="https://x.com/Near_Phi" style="color:#6a6a7a;text-decoration:none;font-weight:400">@Near_Phi</a>
+</div>
+
+<script>
+  // Hide badge in capture mode too
+  if (new URLSearchParams(location.search).get('capture') === '1'){
+    document.getElementById('near-phi-badge').style.display = 'none';
+  }
+</script>
+
+</body>
+</html>

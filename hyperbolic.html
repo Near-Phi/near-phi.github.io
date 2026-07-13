@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>THE GATE: Hyperbolic Tiling Zoom | Near-Phi</title>
+<meta name="description" content="Infinite Poincare-disk hyperbolic tilings, {7,3} and {5,4} triangle groups, conformal zoom toward the boundary. Live in your browser.">
+<link rel="canonical" href="https://near-phi.github.io/hyperbolic.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="THE GATE: Hyperbolic Tiling Zoom">
+<meta property="og:description" content="Poincare-disk hyperbolic tilings that scroll infinitely toward the boundary. Escher Circle-Limit coloring, neon variant, live shader.">
+<meta property="og:url" content="https://near-phi.github.io/hyperbolic.html">
+<meta property="og:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<meta name="twitter:title" content="THE GATE: Hyperbolic Tiling Zoom">
+<meta name="twitter:description" content="Infinite Poincare-disk hyperbolic tilings, live in your browser.">
+<meta name="twitter:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "THE GATE - Hyperbolic Tiling Zoom",
+  "url": "https://near-phi.github.io/hyperbolic.html",
+  "description": "Browser-based Poincare-disk hyperbolic tiling renderer: {7,3} and {5,4} triangle groups, conformal infinite zoom toward the boundary.",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isPartOf": { "@type": "WebSite", "name": "Near-Phi", "url": "https://near-phi.github.io/" },
+  "publisher": { "@type": "Organization", "name": "Near-Phi", "url": "https://near-phi.github.io/" }
+}
+</script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #000; overflow: hidden; height: 100%; }
+  body { font-family: 'Consolas', 'Monaco', monospace; }
+  canvas { display: block; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; cursor: grab; }
+  canvas.dragging { cursor: grabbing; }
+
+  #ui {
+    position: fixed; left: 0; right: 0; bottom: 0; top: 0; z-index: 10;
+    pointer-events: none; transition: opacity 1s ease;
+  }
+  #ui.hidden { opacity: 0; }
+
+  #title {
+    position: fixed; top: 22px; left: 26px; z-index: 10;
+    color: #eaf6ff; font-size: 15px; letter-spacing: 6px; font-weight: 600;
+    text-shadow: 0 0 12px rgba(120,200,255,0.7), 0 0 26px rgba(150,100,255,0.4);
+    pointer-events: none;
+  }
+  #subtitle {
+    position: fixed; top: 44px; left: 26px; z-index: 10;
+    color: rgba(180,210,255,0.55); font-size: 10px; letter-spacing: 2px;
+    pointer-events: none;
+  }
+
+  #dots {
+    position: fixed; bottom: 20px; left: 26px; z-index: 10;
+    display: flex; gap: 10px; pointer-events: auto;
+  }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3);
+    cursor: pointer; transition: all 0.25s ease;
+  }
+  .dot:hover { background: rgba(255,255,255,0.45); }
+  .dot.active { background: #59f2ff; border-color: #59f2ff; box-shadow: 0 0 10px #59f2ff, 0 0 20px rgba(89,242,255,0.5); }
+
+  #hint {
+    position: fixed; bottom: 20px; right: 26px; z-index: 10;
+    color: rgba(180,210,255,0.4); font-size: 10px; letter-spacing: 1px;
+    text-align: right; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <div id="title">THE GATE</div>
+  <div id="subtitle">HYPERBOLIC TILING &middot; POINCAR&Eacute; DISK</div>
+  <div id="dots">
+    <div class="dot active" data-i="0" title="{7,3} NEON"></div>
+    <div class="dot" data-i="1" title="{5,4} ESCHER"></div>
+    <div class="dot" data-i="2" title="SPECTRUM"></div>
+  </div>
+  <div id="hint">DRAG TO MOVE &middot; SCROLL TO CHANGE ORDER</div>
+</div>
+
+<script id="vs" type="x-shader/x-vertex">#version 300 es
+in vec2 a_pos;
+out vec2 v_uv;
+void main() {
+  v_uv = a_pos;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}
+</script>
+
+<script id="fs" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 fragColor;
+
+uniform vec2  u_resolution;
+uniform float u_time;
+uniform float u_p;          // polygon sides
+uniform float u_q;          // tiles per vertex
+uniform int   u_preset;     // 0 neon, 1 escher, 2 spectrum
+uniform vec2  u_pan;        // Mobius translation (disk coords)
+uniform float u_rot;
+
+#define PI 3.14159265359
+#define FOLD_ITER 40
+
+// complex ops
+vec2 cmul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+vec2 cdiv(vec2 a, vec2 b) { float d = dot(b,b) + 1e-9; return vec2(a.x*b.x + a.y*b.y, a.y*b.x - a.x*b.y) / d; }
+vec2 cconj(vec2 a) { return vec2(a.x, -a.y); }
+
+// Mobius transform of the disk: z -> (z + a) / (1 + conj(a)*z)
+vec2 mobius(vec2 z, vec2 a) {
+  return cdiv(z + a, vec2(1.0,0.0) + cmul(cconj(a), z));
+}
+
+// reflect point z across a geodesic circle (center c, radius r) via inversion
+vec2 invertCircle(vec2 z, vec2 c, float r) {
+  vec2 d = z - c;
+  float d2 = dot(d,d);
+  d2 = max(d2, 1e-8);
+  return c + d * (r*r / d2);
+}
+
+// reflect across a geodesic that is a straight line through origin with normal n
+vec2 reflectLine(vec2 z, vec2 n) {
+  return z - 2.0 * dot(z, n) * n;
+}
+
+mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
+
+// Build the {p,q} fundamental triangle mirrors, fold z into it,
+// return: folded position, iteration parity count, distance to nearest edge
+struct FoldResult {
+  vec2 z;
+  float parity;
+  float edgeDist;
+};
+
+FoldResult foldToFundamental(vec2 z, float p, float q) {
+  // fundamental triangle has angles PI/p, PI/q, PI/2 at:
+  //  A = origin (angle PI/p)
+  //  side along angle 0 to vertex on unit circle direction
+  //  mirror 1: the ray theta = 0 (line through origin, normal = (0,1))
+  //  mirror 2: the ray theta = PI/p (line through origin, normal = rotated)
+  //  mirror 3: circular arc geodesic closing the triangle (perpendicular to unit disk boundary)
+  vec2 n1 = vec2(0.0, 1.0);                       // mirror at theta=0 line (reflect across x-axis)
+  float ang2 = PI / p;
+  vec2 n2 = vec2(-sin(ang2), cos(ang2));           // mirror at theta = PI/p
+
+  // third mirror: circle orthogonal to unit circle, passing through the two
+  // triangle vertices on the p-gon edge. Compute via hyperbolic trig.
+  float cp = cos(PI / p), cq = cos(PI / q);
+  float sp = sin(PI / p);
+  // vertex angle at origin is PI/p; the opposite side is a geodesic arc.
+  // radius/center of the orthogonal circle (standard construction):
+  float cosA = cp, sinA = sp;
+  float cosB = cq;
+  // distance from origin to the arc's circle center:
+  float k = (cosA * cosB + cos(PI/2.0)) / (sinA * sin(PI/2.0)); // sin(C)=1 since angle3=PI/2
+  // fallback robust formula (Poincare orthogonal circle through two points at
+  // hyperbolic vertex construction):
+  float R = sqrt(max(k*k - 1.0, 1e-6));
+  vec2 mid = vec2(cos(ang2*0.5), sin(ang2*0.5));
+  vec2 c3 = mid * k;
+  float r3 = R;
+
+  float parity = 0.0;
+  float edgeDist = 1e5;
+
+  for (int i = 0; i < FOLD_ITER; i++) {
+    bool moved = false;
+
+    // fold across n1 (keep upper half, y>=0 side w.r.t normal n1)
+    float d1 = dot(z, n1);
+    edgeDist = min(edgeDist, abs(d1));
+    if (d1 < 0.0) { z = reflectLine(z, n1); parity += 1.0; moved = true; }
+
+    // fold across n2
+    float d2 = dot(z, n2);
+    edgeDist = min(edgeDist, abs(d2));
+    if (d2 > 0.0) { z = reflectLine(z, n2); parity += 1.0; moved = true; }
+
+    // fold across circle 3
+    vec2 dz = z - c3;
+    float dist3 = length(dz) - r3;
+    edgeDist = min(edgeDist, abs(dist3) * 0.5);
+    if (dist3 < 0.0) { z = invertCircle(z, c3, r3); parity += 1.0; moved = true; }
+
+    if (!moved) break;
+  }
+
+  FoldResult res;
+  res.z = z;
+  res.parity = parity;
+  res.edgeDist = edgeDist;
+  return res;
+}
+
+vec3 hsv2rgb(float h, float s, float v) {
+  vec3 c = vec3(h, s, v);
+  vec3 rgb = clamp(abs(mod(c.x*6.0+vec3(0,4,2), 6.0)-3.0)-1.0, 0.0, 1.0);
+  return c.z * mix(vec3(1.0), rgb, c.y);
+}
+
+void main() {
+  vec2 res = u_resolution;
+  vec2 uv = (gl_FragCoord.xy - 0.5 * res) / min(res.x, res.y) * 1.06;
+
+  // chromatic aberration toward rim
+  float rimAmt = smoothstep(0.3, 1.0, length(uv));
+  vec2 dir = length(uv) > 1e-4 ? normalize(uv) : vec2(0.0);
+  float ab = 0.006 * rimAmt;
+
+  vec3 colorOut = vec3(0.0);
+
+  for (int ch = 0; ch < 3; ch++) {
+    vec2 offs = dir * ab * (float(ch) - 1.0);
+    vec2 p = uv + offs;
+
+    // global rotation
+    p = rot2(u_rot) * p;
+
+    float r = length(p);
+    if (r >= 0.998) { continue; }
+
+    // map disk-normalized coordinate (already in Poincare disk since r<1 domain)
+    vec2 z = p;
+
+    // continuous hyperbolic translation: Mobius-translate the whole plane
+    z = mobius(z, u_pan);
+
+    // guard: if the Mobius map pushed near/outside boundary, fade instead of NaN
+    float rz = length(z);
+    if (rz >= 0.999995) { continue; }
+
+    FoldResult fr = foldToFundamental(z, u_p, u_q);
+
+    float parityMod = mod(fr.parity, 2.0);
+    float edge = fr.edgeDist;
+
+    // edge glow: distance measured in the folded chart, scale roughly by
+    // local hyperbolic metric so lines stay visually even near the rim.
+    // Metric growth is capped so density holds even when the view is panned
+    // deep toward the boundary (uncapped metric would starve the whole
+    // frame of visible edges, reading as near-total black).
+    float metric = 2.0 / max(1.0 - rz*rz, 0.02);
+    metric = min(metric, 26.0);
+    float edgeUnits = edge * metric;
+
+    float breathe = 0.75 + 0.25 * sin(u_time * 0.9);
+    float glowW = 0.048 * breathe;
+    float glow = exp(-edgeUnits / glowW);
+    float core = 1.0 - smoothstep(0.0, glowW*0.4, edgeUnits);
+
+    vec3 tileA, tileB, edgeCol;
+
+    if (u_preset == 0) {
+      // NEON {7,3}: glassy tiles with a saturated teal/violet wash, thin glowing cyan/violet edges
+      tileA = vec3(0.01, 0.07, 0.13);
+      tileB = vec3(0.08, 0.02, 0.12);
+      vec3 edgeCyan = vec3(0.35, 0.95, 1.0);
+      vec3 edgeViolet = vec3(0.61, 0.42, 1.0);
+      edgeCol = mix(edgeCyan, edgeViolet, parityMod);
+    } else if (u_preset == 1) {
+      // ESCHER {5,4}: deep red-black / gold two-tone, Circle-Limit feel
+      tileA = vec3(0.22, 0.025, 0.035);
+      tileB = vec3(0.05, 0.02, 0.02);
+      edgeCol = vec3(1.0, 0.81, 0.42);
+    } else {
+      // SPECTRUM: hue by fold count, psychedelic depth shimmer
+      float hue = fract(fr.parity / 14.0 + u_time * 0.02);
+      tileA = hsv2rgb(hue, 0.75, 0.16);
+      tileB = hsv2rgb(fract(hue + 0.5), 0.75, 0.10);
+      edgeCol = hsv2rgb(fract(hue + 0.15), 0.9, 1.0);
+    }
+
+    vec3 tile = mix(tileA, tileB, parityMod);
+    // faint glassy sheen based on depth toward center of tile
+    tile += 0.05 * (1.0 - edgeUnits) * vec3(0.5, 0.7, 1.0) * step(0.15, edgeUnits);
+
+    vec3 col = tile;
+    col += edgeCol * glow * 1.15;
+    col += edgeCol * core * 1.6;
+
+    // vignette (keeps rim alive rather than crushing to black)
+    float vig = smoothstep(1.02, 0.15, r);
+    col *= mix(0.55, 1.0, vig);
+    // rim life: subtle glow ring right at the boundary
+    float rimGlow = exp(-abs(r - 0.985) * 40.0) * 0.3;
+    col += edgeCol * rimGlow;
+
+    colorOut[ch] += col[ch];
+  }
+
+  fragColor = vec4(colorOut, 1.0);
+}
+</script>
+
+<script>
+(function(){
+  const canvas = document.getElementById('gl');
+  const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
+  if (!gl) {
+    document.body.innerHTML = '<div style="color:#fff;padding:40px;font-family:monospace">WebGL2 not supported on this device.</div>';
+    throw new Error('no webgl2');
+  }
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error('Shader compile error:', gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  const vs = compile(gl.VERTEX_SHADER, document.getElementById('vs').textContent);
+  const fs = compile(gl.FRAGMENT_SHADER, document.getElementById('fs').textContent);
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vs);
+  gl.attachShader(prog, fs);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    console.error('Program link error:', gl.getProgramInfoLog(prog));
+  }
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const aPos = gl.getAttribLocation(prog, 'a_pos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  const U = {};
+  ['u_resolution','u_time','u_p','u_q','u_preset','u_pan','u_rot'].forEach(n => {
+    U[n] = gl.getUniformLocation(prog, n);
+  });
+
+  // ==== presets ====
+  const PRESETS = [
+    { name: 'NEON {7,3}',    p: 7, q: 3, preset: 0 },
+    { name: 'ESCHER {5,4}',  p: 5, q: 4, preset: 1 },
+    { name: 'SPECTRUM {7,3}',p: 7, q: 3, preset: 2 },
+  ];
+
+  const capture = /[?&]capture=1\b/.test(location.search);
+
+  const state = {
+    presetIndex: 0,
+    p: PRESETS[0].p,
+    q: PRESETS[0].q,
+    preset: PRESETS[0].preset,
+    panX: 0.0, panY: 0.0,     // accumulated Mobius pan (disk coords)
+    rot: 0.0,
+    dragging: false,
+    dragLast: [0,0],
+    startTime: performance.now(),
+  };
+
+  // continuous conformal "zoom toward boundary" motion: drive a Mobius
+  // translation whose magnitude follows a smooth sawtooth-like ramp in disk
+  // radius (0 -> maxR asymptotically, then reset). Because fold() is
+  // invariant under the {p,q} reflection group, resetting panR to 0 while
+  // holding panAngle fixed lands back on group-equivalent tiling geometry,
+  // so the reset reads as a seamless continuation, not a jump — this is the
+  // "infinite zoom" loop.
+  let autoPanAngle = 0.62831853; // direction slowly precesses; each breath sweeps a new heading
+  const PAN_PERIOD = 14.0;  // seconds per breath (out and back, seamless)
+  const PAN_MAXR = 0.62;    // deep pan inflates the center tile; keep the lattice legible
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.floor(window.innerWidth * dpr);
+    const h = Math.floor(window.innerHeight * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w; canvas.height = h;
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      gl.viewport(0, 0, w, h);
+    }
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function setPreset(i) {
+    i = ((i % PRESETS.length) + PRESETS.length) % PRESETS.length;
+    state.presetIndex = i;
+    const pr = PRESETS[i];
+    state.p = pr.p; state.q = pr.q; state.preset = pr.preset;
+    document.querySelectorAll('.dot').forEach((d, idx) => d.classList.toggle('active', idx === i));
+  }
+
+  document.querySelectorAll('.dot').forEach(d => {
+    d.addEventListener('click', () => setPreset(parseInt(d.dataset.i, 10)));
+  });
+
+  // ==== mouse drag = Mobius-translate the view ====
+  canvas.addEventListener('mousedown', (e) => {
+    state.dragging = true;
+    state.dragLast = [e.clientX, e.clientY];
+    canvas.classList.add('dragging');
+    noteActivity();
+  });
+  window.addEventListener('mouseup', () => { state.dragging = false; canvas.classList.remove('dragging'); });
+  window.addEventListener('mousemove', (e) => {
+    if (!state.dragging) return;
+    const dx = (e.clientX - state.dragLast[0]) / Math.min(window.innerWidth, window.innerHeight);
+    const dy = (e.clientY - state.dragLast[1]) / Math.min(window.innerWidth, window.innerHeight);
+    state.dragLast = [e.clientX, e.clientY];
+    applyPan(-dx * 1.4, dy * 1.4);
+    noteActivity();
+  });
+
+  function applyPan(dx, dy) {
+    // Compose with existing pan approx by adding in tangent space then
+    // clamping to keep inside the disk (avoid boundary singularity).
+    let nx = state.panX + dx;
+    let ny = state.panY + dy;
+    const r = Math.hypot(nx, ny);
+    const maxR = 0.92;
+    if (r > maxR) { nx *= maxR / r; ny *= maxR / r; }
+    state.panX = nx; state.panY = ny;
+  }
+
+  // scroll = swap p,q live (cycle a small set of valid hyperbolic {p,q})
+  const PQ_CYCLE = [[7,3],[5,4],[8,3],[4,5],[6,4],[3,7]];
+  let pqIdx = 0;
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    pqIdx = (pqIdx + (e.deltaY > 0 ? 1 : -1) + PQ_CYCLE.length) % PQ_CYCLE.length;
+    state.p = PQ_CYCLE[pqIdx][0];
+    state.q = PQ_CYCLE[pqIdx][1];
+    noteActivity();
+  }, { passive: false });
+
+  // ==== UI fade after 3s idle ====
+  const uiEl = document.getElementById('ui');
+  let idleTimer = null;
+  function noteActivity() {
+    if (capture) return;
+    uiEl.classList.remove('hidden');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => uiEl.classList.add('hidden'), 3000);
+  }
+  window.addEventListener('mousemove', noteActivity);
+  window.addEventListener('mousedown', noteActivity);
+  noteActivity();
+
+  if (capture) {
+    uiEl.style.display = 'none';
+    setPreset(0);
+  }
+
+  // ==== context loss handling ====
+  let contextLost = false;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    contextLost = true;
+    const warn = document.createElement('div');
+    warn.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#000;color:#f55;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:18px;letter-spacing:2px;';
+    warn.textContent = 'WEBGL CONTEXT LOST — RELOAD';
+    document.body.appendChild(warn);
+  });
+
+  // ==== main loop ====
+  function frame() {
+    requestAnimationFrame(frame);
+    if (contextLost) return;
+    resize();
+
+    const t = (performance.now() - state.startTime) / 1000;
+
+    // continuous hyperbolic translation toward the boundary: panR sweeps
+    // 0 -> PAN_MAXR on a repeating ramp (eased), giving a constant sense of
+    // outward flow that restarts seamlessly (fold()'s group symmetry makes
+    // panR=0 and panR=PAN_MAXR read as equivalent depths in the pattern).
+    if (!state.dragging) {
+      // seamless breath: 0 -> max -> 0 on a cosine (no sawtooth cut), while the
+      // heading precesses so every sweep dives through a different corridor
+      const phase = (t % PAN_PERIOD) / PAN_PERIOD;
+      const r = PAN_MAXR * 0.5 * (1.0 - Math.cos(2.0 * Math.PI * phase));
+      autoPanAngle += 0.016 * 0.11;
+      state.panX = Math.cos(autoPanAngle) * r;
+      state.panY = Math.sin(autoPanAngle) * r;
+    }
+
+    state.rot += 0.016 * 0.045;
+
+    gl.uniform2f(U.u_resolution, canvas.width, canvas.height);
+    gl.uniform1f(U.u_time, t);
+    gl.uniform1f(U.u_p, state.p);
+    gl.uniform1f(U.u_q, state.q);
+    gl.uniform1i(U.u_preset, state.preset);
+    gl.uniform2f(U.u_pan, state.panX, state.panY);
+    gl.uniform1f(U.u_rot, state.rot);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+  requestAnimationFrame(frame);
+
+  // ==== window.studio API ====
+  window.studio = {
+    presets: PRESETS.map(p => p.name),
+    setPreset: setPreset,
+    params: state,
+  };
+})();
+</script>
+
+<div id="near-phi-badge" style="position:fixed;bottom:10px;right:10px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(10,10,15,.82);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 12px;font:600 11px/1.2 'Segoe UI',system-ui,sans-serif;backdrop-filter:blur(4px)">
+  <a href="https://near-phi.github.io/" style="color:#c8c8d8;text-decoration:none">Near<span style="color:#4a9eff">Phi</span></a>
+  <span style="color:#3a3a4a">|</span>
+  <a href="https://x.com/Near_Phi" style="color:#6a6a7a;text-decoration:none;font-weight:400">@Near_Phi</a>
+</div>
+
+</body>
+</html>

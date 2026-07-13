@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORBITAL — near-phi studio</title>
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden;width:100%;height:100%;}
+  canvas{display:block;position:absolute;top:0;left:0;width:100%;height:100%;}
+  #ui{
+    position:fixed;left:0;top:0;width:100%;height:100%;
+    pointer-events:none;font-family:'Consolas','Courier New',monospace;
+    color:#cfe8ff;transition:opacity 1.2s ease;opacity:1;z-index:10;
+  }
+  #ui.faded{opacity:0;}
+  #title{
+    position:absolute;top:22px;left:26px;font-size:15px;letter-spacing:0.42em;
+    font-weight:600;color:#eaf6ff;text-shadow:0 0 12px rgba(120,200,255,0.8),0 0 30px rgba(120,200,255,0.4);
+  }
+  #sub{
+    position:absolute;top:46px;left:26px;font-size:9px;letter-spacing:0.2em;
+    color:rgba(180,220,255,0.55);
+  }
+  #count{
+    position:absolute;top:22px;right:26px;font-size:11px;letter-spacing:0.15em;
+    color:rgba(180,220,255,0.75);text-align:right;
+  }
+  #dots{
+    position:absolute;bottom:22px;left:26px;display:flex;gap:10px;pointer-events:auto;
+  }
+  .dot{
+    width:10px;height:10px;border-radius:50%;border:1px solid rgba(200,230,255,0.5);
+    background:rgba(200,230,255,0.08);cursor:pointer;transition:all .25s ease;
+  }
+  .dot.active{background:rgba(200,230,255,0.9);box-shadow:0 0 10px rgba(200,230,255,0.9);}
+  #hint{
+    position:absolute;bottom:22px;right:26px;font-size:9px;letter-spacing:0.12em;
+    color:rgba(180,220,255,0.4);text-align:right;
+  }
+  #fallback{
+    position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+    color:#ff6a6a;font-family:monospace;font-size:16px;text-align:center;background:#000;z-index:99;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="fallback">canvas 2d context unavailable</div>
+<div id="ui">
+  <div id="title">ORBITAL</div>
+  <div id="sub">near-phi studio</div>
+  <div id="count">BALLS <span id="ballCount">1</span></div>
+  <div id="dots"></div>
+  <div id="hint">1-3 palette · click nudge · M unmute</div>
+</div>
+<script>
+(function(){
+"use strict";
+
+// ---------- capture mode ----------
+const params = new URLSearchParams(location.search);
+const CAPTURE = params.get('capture') === '1';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+if (!ctx) {
+  document.getElementById('fallback').style.display = 'flex';
+  throw new Error('no 2d context');
+}
+
+// glow accumulation layer (draws additive trails/bursts, then composited)
+const glow = document.createElement('canvas');
+const gctx = glow.getContext('2d', { alpha: true });
+
+let DPR = Math.min(window.devicePixelRatio || 1, 2);
+let W = 0, H = 0;
+
+function resize(){
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.floor(W * DPR);
+  canvas.height = Math.floor(H * DPR);
+  glow.width = canvas.width;
+  glow.height = canvas.height;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  gctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- palettes ----------
+const PALETTES = [
+  { // 0 PLASMA
+    name: 'PLASMA',
+    bg: '#000000',
+    ball: ['#7dfcff', '#59f2ff', '#bafcff'],
+    ring: '#ffcf6a',
+    ringDim: 'rgba(255,207,106,0.45)',
+    burst: '#ff59d6',
+    spark: '#ffe37a',
+    shard: '#ffcf6a',
+    grid: 'rgba(130,190,255,0.11)',
+    dust: 'rgba(180,220,255,0.75)',
+    ambientCore: 'rgba(89,242,255,0.4)',
+    ambientMid: 'rgba(255,89,214,0.16)'
+  },
+  { // 1 EMBER
+    name: 'EMBER',
+    bg: '#000000',
+    ball: ['#ffffff', '#ffe9c9', '#fff6e8'],
+    ring: '#ff5a2e',
+    ringDim: 'rgba(255,90,46,0.45)',
+    burst: '#ffb347',
+    spark: '#ffffff',
+    shard: '#ff5a2e',
+    grid: 'rgba(255,130,70,0.12)',
+    dust: 'rgba(255,180,140,0.7)',
+    ambientCore: 'rgba(255,90,46,0.4)',
+    ambientMid: 'rgba(255,179,71,0.18)'
+  },
+  { // 2 VOID
+    name: 'VOID',
+    bg: '#000000',
+    ball: ['#dff4ff', '#9fd8ff', '#eafcff'],
+    ring: '#6fb8ff',
+    ringDim: 'rgba(111,184,255,0.38)',
+    burst: '#bfe6ff',
+    spark: '#ffffff',
+    shard: '#6fb8ff',
+    grid: 'rgba(120,170,255,0.1)',
+    dust: 'rgba(160,210,255,0.65)',
+    ambientCore: 'rgba(111,184,255,0.34)',
+    ambientMid: 'rgba(191,230,255,0.14)'
+  }
+];
+let paletteIdx = 0;
+let pal = PALETTES[0];
+
+// ---------- physics constants ----------
+const MAX_BALLS = 220;
+const BASE_RADIUS = 6.2;
+const FIXED_DT = 1/120; // fixed timestep substeps for stability
+const RESTITUTION = 1.0;
+const GRAVITY_BASE = 0; // orbital field, not linear gravity (center pull instead)
+const CENTER_PULL = 10; // px/s^2 gentle inward accel keeps balls from drifting to a ring wall forever
+const MAX_SPEED = 900;
+const MIN_SPEED = 160; // floor so balls never stall into a dead low-energy orbit
+
+// events ring buffer for music sync
+const EVENTS_MAX = 256;
+window.studio = window.studio || {};
+window.studio.events = [];
+window.studio.eventCounter = 0;
+function pushEvent(type, ringIdx){
+  const arr = window.studio.events;
+  arr.push({ t: performance.now()/1000, type: type, ring: ringIdx });
+  if (arr.length > EVENTS_MAX) arr.shift();
+  window.studio.eventCounter++;
+}
+
+// ---------- audio (muted by default, never autoplay) ----------
+let audioCtx = null;
+let muted = true;
+function ensureAudio(){
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch(e){ audioCtx = null; }
+}
+function blip(freq){
+  if (muted || !audioCtx) return;
+  try{
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    g.gain.value = 0.0001;
+    o.connect(g); g.connect(audioCtx.destination);
+    const t0 = audioCtx.currentTime;
+    g.gain.exponentialRampToValueAtTime(0.05, t0+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+0.18);
+    o.start(t0);
+    o.stop(t0+0.2);
+  }catch(e){}
+}
+
+// ---------- scene geometry ----------
+let cx = 0, cy = 0;
+let sceneScale = 1;
+let baseOuterRadius = 0;
+
+// rings: each has radius, gapAngle (center of gap), gapWidth (radians), angularVel,
+// alive (bool), shattering (progress), shards[]
+let rings = [];
+let RING_COUNT = 4;
+const RING_GAP_WIDTH = 0.86; // radians, wide enough for a ball to pass cleanly
+const RING_THICKNESS = 3.4;
+
+function layoutRings(n){
+  rings = [];
+  const outerR = baseOuterRadius;
+  const innerR = outerR * 0.30;
+  for (let i=0;i<n;i++){
+    const t = n === 1 ? 1 : i/(n-1);
+    const r = innerR + (outerR - innerR) * (i/(n-1===0?1:n-1));
+    const dir = (i % 2 === 0) ? 1 : -1;
+    const speed = (0.42 + i*0.16) * dir * (0.85 + Math.random()*0.3);
+    rings.push({
+      idx: i,
+      radius: r,
+      angle: Math.random()*Math.PI*2, // rotation offset (gap position)
+      angVel: speed,
+      gapWidth: RING_GAP_WIDTH * (1 - i*0.03),
+      effGapWidth: RING_GAP_WIDTH * (1 - i*0.03),
+      alive: true,
+      emptyTimer: 0,
+      shattering: 0, // 0..1 progress once triggered
+      shards: [],
+      hitFlash: 0 // ring-wide flash on collision
+    });
+  }
+}
+
+// ---------- balls ----------
+let balls = [];
+
+function spawnBall(x, y, vx, vy, hue){
+  return {
+    x, y, vx, vy,
+    r: BASE_RADIUS,
+    trail: [], // {x,y}
+    hue: hue !== undefined ? hue : Math.random(),
+    spin: (Math.random()-0.5)*4,
+    born: performance.now()/1000
+  };
+}
+
+function resetScene(){
+  layoutRings(RING_COUNT);
+  // give real tangential (orbital) velocity so the ball sweeps angularly and
+  // actually meets rotating ring gaps, instead of oscillating on one radial line
+  const spawnR = baseOuterRadius*0.05;
+  const spawnAng = -Math.PI/2;
+  const sx = cx + Math.cos(spawnAng)*spawnR;
+  const sy = cy + Math.sin(spawnAng)*spawnR;
+  const outAng = spawnAng; // radially outward
+  const tangentAng = spawnAng + Math.PI/2; // perpendicular = tangential direction
+  const speedOut = 190, speedTan = 150;
+  const vx = Math.cos(outAng)*speedOut + Math.cos(tangentAng)*speedTan;
+  const vy = Math.sin(outAng)*speedOut + Math.sin(tangentAng)*speedTan;
+  balls = [spawnBall(sx, sy, vx, vy, 0.5)];
+  particles.length = 0;
+  sparks.length = 0;
+  ripples.length = 0;
+  escalation = 0;
+  sceneStartT = performance.now()/1000;
+  imploding = false;
+}
+
+// ---------- particles (bursts) & sparks & ripples ----------
+let particles = []; // ring-shatter / escape burst particles, drift + fade
+let sparks = [];    // small bright collision sparks
+let ripples = [];   // radial shockwave rings
+
+function spawnBurst(x, y, color, count, speedMin, speedMax){
+  for (let i=0;i<count;i++){
+    const a = Math.random()*Math.PI*2;
+    const sp = speedMin + Math.random()*(speedMax-speedMin);
+    particles.push({
+      x, y,
+      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp,
+      life: 1, decay: 0.6 + Math.random()*0.5,
+      size: 2.0 + Math.random()*3.2,
+      color
+    });
+  }
+  if (particles.length > 900) particles.splice(0, particles.length - 900);
+}
+
+function spawnSparks(x, y, nx, ny, color, count){
+  for (let i=0;i<count;i++){
+    const spread = (Math.random()-0.5)*1.6;
+    const ang = Math.atan2(ny, nx) + spread;
+    const sp = 60 + Math.random()*180;
+    sparks.push({
+      x, y,
+      vx: Math.cos(ang)*sp, vy: Math.sin(ang)*sp,
+      life: 1, decay: 2.2 + Math.random()*1.8,
+      color
+    });
+  }
+  if (sparks.length > 500) sparks.splice(0, sparks.length - 500);
+}
+
+function spawnRipple(x, y, color, maxR){
+  ripples.push({ x, y, r: 4, maxR, life: 1, color });
+  if (ripples.length > 40) ripples.shift();
+}
+
+// ---------- shards (shattered ring pieces) ----------
+function shatterRing(ring){
+  const segs = 14;
+  const arcLen = (Math.PI*2)/segs * 0.7; // slightly shorter than the tiled span so gaps show between shards
+  for (let i=0;i<segs;i++){
+    const mid = (i/segs) * Math.PI*2 + (Math.random()-0.5)*0.15;
+    ring.shards.push({
+      a0: -arcLen/2, a1: arcLen/2, // local arc span, drawn around the drifting piece's own center
+      baseAngle: mid,
+      radius: ring.radius,
+      ox: 0, oy: 0, // outward drift offset from original ring position
+      vx: Math.cos(mid)*(24+Math.random()*46),
+      vy: Math.sin(mid)*(24+Math.random()*46),
+      rot: mid,
+      rotVel: (Math.random()-0.5)*1.4,
+      life: 1,
+      decay: 0.055 + Math.random()*0.04
+    });
+  }
+  spawnRipple(cx, cy, pal.burst, ring.radius*1.4);
+  spawnBurst(cx, cy, pal.burst, 60, 40, 260);
+  pushEvent('ring_shatter', ring.idx);
+  blip(180 + ring.idx*40);
+}
+
+// ---------- collision resolution: circle vs arc (ring) ----------
+// Ring is a thin arc of given radius+thickness with a gap [angle-halfGap, angle+halfGap].
+// We treat the ring as a circular wall; ball bounces elastically off the wall's local
+// normal unless its angular position at the wall lies within the gap, in which case
+// it passes through (escape).
+function angDiff(a, b){
+  let d = (a - b) % (Math.PI*2);
+  if (d > Math.PI) d -= Math.PI*2;
+  if (d < -Math.PI) d += Math.PI*2;
+  return d;
+}
+
+function isInGap(ballAngle, ring){
+  const gapCenter = ring.angle;
+  const d = angDiff(ballAngle, gapCenter);
+  const gw = ring.effGapWidth || ring.gapWidth;
+  return Math.abs(d) < gw/2;
+}
+
+let escalation = 0; // 0..1 drives chaos ramp over ~30s
+let sceneStartT = 0;
+let imploding = false;
+let implodeStartT = 0;
+const LOOP_SECONDS = 30;
+
+function totalAliveBallsInsideRing(ringIdx){
+  // count balls whose radial distance from center is < ring radius (i.e. still "inside" that shell)
+  return 0; // not used directly; escape/empty tracked via emptyTimer heuristic
+}
+
+function stepPhysics(dt){
+  const t = performance.now()/1000;
+  const nowElapsed = t - sceneStartT;
+
+  // update ring rotation + chaos-scaled speed
+  const chaosSpeed = 1 + escalation*2.6;
+  for (const ring of rings){
+    if (!ring.alive) {
+      // update shards drifting outward from their original ring position
+      for (const s of ring.shards){
+        s.ox += s.vx*dt; s.oy += s.vy*dt;
+        s.rot += s.rotVel*dt;
+        s.life -= s.decay*dt;
+      }
+      ring.shards = ring.shards.filter(s => s.life > 0);
+      continue;
+    }
+    ring.angle += ring.angVel * chaosSpeed * dt;
+    ring.hitFlash = Math.max(0, ring.hitFlash - dt*5.5);
+  }
+
+  // gravity nudge toward cursor (temporary), plus gentle center pull
+  const cpMul = 1;
+
+  for (const ball of balls){
+    // center pull (keeps things orbital rather than balls parking on outer wall)
+    const dx0 = cx - ball.x, dy0 = cy - ball.y;
+    const dist0 = Math.max(1, Math.hypot(dx0, dy0));
+    let ax = (dx0/dist0) * CENTER_PULL * cpMul;
+    let ay = (dy0/dist0) * CENTER_PULL * cpMul;
+
+    // cursor nudge
+    if (nudge.active){
+      const ndx = nudge.x - ball.x, ndy = nudge.y - ball.y;
+      const nd = Math.max(1, Math.hypot(ndx, ndy));
+      const strength = nudge.strength * Math.max(0, 1 - nd/620);
+      ax += (ndx/nd) * strength;
+      ay += (ndy/nd) * strength;
+    }
+
+    ball.vx += ax*dt;
+    ball.vy += ay*dt;
+
+    const sp = Math.hypot(ball.vx, ball.vy);
+    if (sp > MAX_SPEED){
+      ball.vx = ball.vx/sp*MAX_SPEED;
+      ball.vy = ball.vy/sp*MAX_SPEED;
+    } else if (sp < MIN_SPEED && sp > 1){
+      ball.vx = ball.vx/sp*MIN_SPEED;
+      ball.vy = ball.vy/sp*MIN_SPEED;
+    }
+
+    ball.x += ball.vx*dt;
+    ball.y += ball.vy*dt;
+
+    // trail (sampled every substep; length tuned for a ~0.35s comet at 120Hz substep rate)
+    ball.trail.push({x: ball.x, y: ball.y});
+    if (ball.trail.length > 140) ball.trail.shift();
+  }
+
+  // collisions vs rings (circle vs circular wall with gap)
+  const newBalls = [];
+  const deadBalls = new Set();
+
+  for (let bi=0; bi<balls.length; bi++){
+    const ball = balls[bi];
+    const dx = ball.x - cx, dy = ball.y - cy;
+    const dist = Math.hypot(dx, dy);
+    const ballAngle = Math.atan2(dy, dx);
+
+    for (const ring of rings){
+      if (!ring.alive) continue;
+      const rOuter = ring.radius + RING_THICKNESS + ball.r*0.5;
+      const rInner = ring.radius - RING_THICKNESS - ball.r*0.5;
+
+      // moving outward through this ring's radius band
+      const prevDist = Math.hypot(dx - ball.vx*dt, dy - ball.vy*dt);
+
+      const crossingOutward = prevDist < ring.radius && dist >= ring.radius;
+      const crossingInward = prevDist > ring.radius && dist <= ring.radius;
+
+      if (!crossingOutward && !crossingInward) continue;
+      if (Math.abs(dist - ring.radius) > (RING_THICKNESS*3 + ball.r*2)) continue;
+
+      // gap widens as the sequence escalates -- structure visibly destabilizing,
+      // and it keeps the escape cascade dependable inside the 30s window
+      ring.effGapWidth = ring.gapWidth * (1 + escalation*2.6);
+
+      if (isInGap(ballAngle, ring)){
+        if (crossingOutward){
+          // ESCAPE through gap -> split into 2 (cap total)
+          pushEvent('escape', ring.idx);
+          blip(420 + ring.idx*30);
+          spawnRipple(ball.x, ball.y, pal.ring, 70);
+          spawnBurst(ball.x, ball.y, pal.burst, 26, 30, 170);
+
+          if (balls.length + newBalls.length - deadBalls.size < MAX_BALLS){
+            const speed = Math.hypot(ball.vx, ball.vy) || 60;
+            const baseAng = Math.atan2(ball.vy, ball.vx);
+            const a1 = baseAng + 0.35 + Math.random()*0.2;
+            const a2 = baseAng - 0.35 - Math.random()*0.2;
+            const nx = ball.x, ny = ball.y;
+            newBalls.push(spawnBall(nx, ny, Math.cos(a1)*speed, Math.sin(a1)*speed, Math.random()));
+            newBalls.push(spawnBall(nx, ny, Math.cos(a2)*speed, Math.sin(a2)*speed, Math.random()));
+            deadBalls.add(bi);
+          }
+          ring.emptyTimer = 0;
+        }
+        // inward crossing through gap: just let it pass, no bounce
+        continue;
+      }
+
+      // solid wall collision: reflect velocity about radial normal, restitution 1.0
+      const nxr = dx/dist, nyr = dy/dist;
+      const vDotN = ball.vx*nxr + ball.vy*nyr;
+      // only reflect if moving into the wall
+      if ((crossingOutward && vDotN > 0) || (crossingInward && vDotN < 0)){
+        ball.vx = (ball.vx - 2*vDotN*nxr) * RESTITUTION;
+        ball.vy = (ball.vy - 2*vDotN*nyr) * RESTITUTION;
+        // push ball back to just inside the wall band to avoid tunneling/sticking
+        const correctedDist = crossingOutward ? ring.radius - 0.5 : ring.radius + 0.5;
+        ball.x = cx + nxr*correctedDist;
+        ball.y = cy + nyr*correctedDist;
+
+        ring.hitFlash = Math.min(1, ring.hitFlash + 0.55);
+        const hitx = cx + nxr*ring.radius, hity = cy + nyr*ring.radius;
+        spawnSparks(hitx, hity, nxr, nyr, pal.spark, 6 + Math.floor(Math.random()*5));
+        pushEvent('collision', ring.idx);
+        if (Math.random() < 0.12) blip(260 + ring.idx*20);
+      }
+    }
+  }
+
+  if (deadBalls.size){
+    balls = balls.filter((b,i) => !deadBalls.has(i));
+  }
+  if (newBalls.length){
+    balls = balls.concat(newBalls);
+  }
+  if (balls.length > MAX_BALLS){
+    balls.length = MAX_BALLS;
+  }
+
+  // ball-ball collisions (elastic, equal mass) — light touch, capped pairs check via simple O(n^2) but n<=220 and dt small; still bound cost
+  resolveBallBallCollisions();
+
+  // determine ring emptiness -> shatter
+  for (const ring of rings){
+    if (!ring.alive) continue;
+    let anyInsideBand = false;
+    for (const ball of balls){
+      const d = Math.hypot(ball.x-cx, ball.y-cy);
+      if (Math.abs(d - ring.radius) < ring.radius*0.55) { anyInsideBand = true; break; }
+    }
+    // heuristic: ring "empties" when no balls remain inside its radius at all
+    let insideCount = 0;
+    for (const ball of balls){
+      const d = Math.hypot(ball.x-cx, ball.y-cy);
+      if (d < ring.radius) insideCount++;
+    }
+    if (insideCount === 0 && balls.length > 0){
+      ring.emptyTimer += dt;
+    } else {
+      ring.emptyTimer = Math.max(0, ring.emptyTimer - dt*2);
+    }
+    if (ring.emptyTimer > 0.6){
+      ring.alive = false;
+      shatterRing(ring);
+    }
+  }
+
+  // escalation ramp over LOOP_SECONDS, then implode + reset
+  escalation = Math.min(1, nowElapsed / (LOOP_SECONDS*0.72));
+
+  const allOuterDead = rings.length > 0 && !rings[rings.length-1].alive;
+  if ((nowElapsed > LOOP_SECONDS || allOuterDead) && !imploding){
+    imploding = true;
+    implodeStartT = t;
+  }
+
+  if (imploding){
+    const p = Math.min(1, (t - implodeStartT) / 2.4);
+    // pull all balls to center rapidly, fade extras
+    for (const ball of balls){
+      const ddx = cx-ball.x, ddy = cy-ball.y;
+      ball.x += ddx * Math.min(1, dt*3.2);
+      ball.y += ddy * Math.min(1, dt*3.2);
+    }
+    if (p >= 1){
+      resetScene();
+    }
+  }
+
+  // decay particles/sparks/ripples
+  for (const p of particles){ p.x += p.vx*dt; p.y += p.vy*dt; p.vx*=0.96; p.vy*=0.96; p.life -= p.decay*dt; }
+  particles = particles.filter(p => p.life > 0);
+  for (const s of sparks){ s.x += s.vx*dt; s.y += s.vy*dt; s.vx*=0.9; s.vy*=0.9; s.life -= s.decay*dt; }
+  sparks = sparks.filter(s => s.life > 0);
+  for (const r of ripples){ r.r += (r.maxR - r.r) * dt * 3.2; r.life -= dt*0.9; }
+  ripples = ripples.filter(r => r.life > 0);
+
+  updateBallCountUI();
+}
+
+function resolveBallBallCollisions(){
+  const n = balls.length;
+  if (n < 2) return;
+  // spatial cheat: only bother if n is modest; still bounded by MAX_BALLS=220
+  for (let i=0;i<n;i++){
+    const a = balls[i];
+    for (let j=i+1;j<n;j++){
+      const b = balls[j];
+      const dx = b.x-a.x, dy = b.y-a.y;
+      const dist2 = dx*dx+dy*dy;
+      const minD = a.r+b.r;
+      if (dist2 > minD*minD || dist2 < 1e-6) continue;
+      const dist = Math.sqrt(dist2);
+      const nx = dx/dist, ny = dy/dist;
+      const overlap = (minD - dist) * 0.5;
+      a.x -= nx*overlap; a.y -= ny*overlap;
+      b.x += nx*overlap; b.y += ny*overlap;
+      const rvx = b.vx-a.vx, rvy = b.vy-a.vy;
+      const rvn = rvx*nx+rvy*ny;
+      if (rvn > 0) continue;
+      const impulse = -(1+RESTITUTION) * rvn / 2;
+      a.vx -= impulse*nx; a.vy -= impulse*ny;
+      b.vx += impulse*nx; b.vy += impulse*ny;
+    }
+  }
+}
+
+// ---------- cursor nudge ----------
+const nudge = { active: false, x:0, y:0, strength: 0, until: 0 };
+function onPointer(e){
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left);
+  const y = (e.clientY - rect.top);
+  nudge.active = true;
+  nudge.x = x; nudge.y = y;
+  nudge.strength = 900;
+  nudge.until = performance.now()/1000 + 0.9;
+  ensureAudio();
+}
+canvas.addEventListener('pointerdown', onPointer);
+
+function updateNudge(){
+  if (nudge.active && performance.now()/1000 > nudge.until){
+    nudge.active = false;
+  }
+}
+
+// ---------- rendering ----------
+let starfield = [];
+function initStarfield(){
+  starfield = [];
+  const count = 260;
+  for (let i=0;i<count;i++){
+    starfield.push({
+      x: Math.random()*W, y: Math.random()*H,
+      r: Math.random()*1.8 + 0.3,
+      tw: Math.random()*Math.PI*2
+    });
+  }
+}
+
+function drawBackground(t){
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0,0,W,H);
+
+  // saturated ambient core glow so the frame reads vivid, not a black void with thin lines
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseOuterRadius*3.4);
+  coreGrad.addColorStop(0, pal.ambientCore || 'rgba(90,140,200,0.55)');
+  coreGrad.addColorStop(0.3, pal.ambientMid || 'rgba(80,60,160,0.3)');
+  coreGrad.addColorStop(0.62, pal.ambientMid || 'rgba(60,40,120,0.18)');
+  coreGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = coreGrad;
+  ctx.fillRect(0,0,W,H);
+
+  // full-frame color wash so even the far corners carry hue (never a gray/black dead zone)
+  const wash = ctx.createLinearGradient(0,0,0,H);
+  wash.addColorStop(0, pal.ambientMid || 'rgba(60,40,120,0.12)');
+  wash.addColorStop(0.5, 'rgba(0,0,0,0)');
+  wash.addColorStop(1, pal.ambientCore || 'rgba(90,140,200,0.12)');
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = wash;
+  ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // faint radial grid (brighter, extends full frame so it fills the vertical crop)
+  ctx.save();
+  ctx.strokeStyle = pal.grid;
+  ctx.lineWidth = 1.1;
+  const gridExtent = Math.max(W,H)*0.85;
+  const rings_n = 9;
+  for (let i=1;i<=rings_n;i++){
+    const r = gridExtent * (i/rings_n);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  const spokes = 16;
+  for (let i=0;i<spokes;i++){
+    const a = (i/spokes)*Math.PI*2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a)*gridExtent, cy + Math.sin(a)*gridExtent);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // starfield dust
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const s of starfield){
+    const flick = 0.5 + 0.5*Math.sin(t*1.4 + s.tw);
+    ctx.globalAlpha = 0.25 + flick*0.5;
+    ctx.fillStyle = pal.dust;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawRings(t){
+  for (const ring of rings){
+    if (ring.alive){
+      const flashBoost = ring.hitFlash;
+      ctx.save();
+      // neon tube: outer soft glow + bright core
+      ctx.lineCap = 'round';
+      ctx.globalCompositeOperation = 'lighter';
+
+      const drawGap = ring.effGapWidth || ring.gapWidth;
+      const a0 = ring.angle + drawGap/2;
+      const a1 = ring.angle - drawGap/2 + Math.PI*2;
+
+      // wide outer halo
+      ctx.strokeStyle = pal.ringDim;
+      ctx.lineWidth = RING_THICKNESS*6.5 + flashBoost*5;
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring.radius, a0, a1);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // soft glow pass
+      ctx.strokeStyle = pal.ringDim;
+      ctx.lineWidth = RING_THICKNESS*3.6 + flashBoost*3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring.radius, a0, a1);
+      ctx.stroke();
+
+      // bright core (blends toward white on hit, never a hard swap)
+      ctx.strokeStyle = pal.ring;
+      ctx.lineWidth = RING_THICKNESS * (1.1 + flashBoost*0.5);
+      ctx.beginPath();
+      ctx.arc(cx, cy, ring.radius, a0, a1);
+      ctx.stroke();
+      if (flashBoost > 0.02){
+        ctx.globalAlpha = Math.min(0.6, flashBoost*0.6);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = RING_THICKNESS * 0.7;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring.radius, a0, a1);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // bracket ticks along the visible arc span
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = pal.ring;
+      const span = (Math.PI*2 - drawGap);
+      const ticks = Math.floor(span / 0.13);
+      for (let i=0;i<=ticks;i++){
+        const ang = a0 + (span) * (i/ticks);
+        const tx0 = cx + Math.cos(ang)*(ring.radius - RING_THICKNESS*1.5);
+        const ty0 = cy + Math.sin(ang)*(ring.radius - RING_THICKNESS*1.5);
+        const tx1 = cx + Math.cos(ang)*(ring.radius + RING_THICKNESS*1.5);
+        const ty1 = cy + Math.sin(ang)*(ring.radius + RING_THICKNESS*1.5);
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(tx0,ty0);
+        ctx.lineTo(tx1,ty1);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // gap end caps (bright dots to mark the doorway)
+      ctx.fillStyle = pal.spark;
+      for (const gAng of [a0, a1]){
+        const gx = cx + Math.cos(gAng)*ring.radius;
+        const gy = cy + Math.sin(gAng)*ring.radius;
+        ctx.beginPath();
+        ctx.arc(gx, gy, 2.6, 0, Math.PI*2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    } else if (ring.shards.length){
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      for (const s of ring.shards){
+        const life = Math.max(0, s.life);
+        if (life <= 0) continue;
+        // piece's own center in world space: original ring point + outward drift
+        const baseX = cx + Math.cos(s.baseAngle)*s.radius;
+        const baseY = cy + Math.sin(s.baseAngle)*s.radius;
+        const px = baseX + s.ox, py = baseY + s.oy;
+        ctx.save();
+        ctx.translate(px, py);
+        ctx.rotate(s.rot);
+        ctx.globalAlpha = life;
+        ctx.strokeStyle = pal.shard;
+        ctx.lineWidth = RING_THICKNESS * 1.1;
+        ctx.beginPath();
+        ctx.arc(0, 0, s.radius*0.08, s.a0, s.a1);
+        ctx.stroke();
+        // small glow point at the shard core
+        ctx.globalAlpha = life*0.7;
+        ctx.fillStyle = pal.shard;
+        ctx.beginPath();
+        ctx.arc(0, 0, 1.6, 0, Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+function hueColor(hue, palColors){
+  const idx = Math.floor(hue * palColors.length) % palColors.length;
+  return palColors[idx];
+}
+
+function drawBalls(t){
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const ball of balls){
+    const col = hueColor(ball.hue, pal.ball);
+
+    // comet tail: long tapered polyline, adaptive stride so 220 balls stay cheap
+    const trail = ball.trail;
+    if (trail.length > 2){
+      const step = Math.max(1, Math.floor(trail.length / (balls.length > 60 ? 14 : 30)));
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = col;
+      for (let i=step; i<trail.length; i+=step){
+        const frac = i/trail.length;
+        ctx.globalAlpha = frac*frac*0.85;
+        ctx.lineWidth = ball.r * (0.25 + frac*1.5);
+        ctx.beginPath();
+        ctx.moveTo(trail[i-step].x, trail[i-step].y);
+        ctx.lineTo(trail[i].x, trail[i].y);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // wide halo
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.13;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r*7.0, 0, Math.PI*2);
+    ctx.fill();
+
+    // outer glow
+    ctx.fillStyle = col;
+    ctx.globalAlpha = 0.38;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r*3.2, 0, Math.PI*2);
+    ctx.fill();
+
+    // core
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fill();
+
+    // hot center
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r*0.4, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawParticles(t){
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of particles){
+    ctx.globalAlpha = Math.max(0, p.life)*0.85;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+    ctx.fill();
+  }
+  for (const s of sparks){
+    ctx.globalAlpha = Math.max(0, s.life);
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 2.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(s.x, s.y);
+    ctx.lineTo(s.x - s.vx*0.05, s.y - s.vy*0.05);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawRipples(t){
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const r of ripples){
+    ctx.globalAlpha = Math.max(0, r.life)*0.5;
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(r.x, r.y, r.r, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ---------- main loop (fixed timestep) ----------
+let lastT = performance.now();
+let accumulator = 0;
+const MAX_SUBSTEPS = 6;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  let dtReal = (now - lastT) / 1000;
+  lastT = now;
+  if (dtReal > 0.25) dtReal = 0.25; // clamp huge gaps (tab switch)
+
+  accumulator += dtReal;
+  let steps = 0;
+  while (accumulator >= FIXED_DT && steps < MAX_SUBSTEPS){
+    updateNudge();
+    stepPhysics(FIXED_DT);
+    accumulator -= FIXED_DT;
+    steps++;
+  }
+  if (steps === MAX_SUBSTEPS) accumulator = 0; // avoid spiral of death
+
+  const t = now/1000;
+  drawBackground(t);
+  drawRipples(t);
+  drawRings(t);
+  drawParticles(t);
+  drawBalls(t);
+
+  updateUIVisibility(now);
+}
+
+// ---------- UI ----------
+let lastInteract = performance.now();
+const uiEl = document.getElementById('ui');
+function markInteract(){ lastInteract = performance.now(); uiEl.classList.remove('faded'); }
+window.addEventListener('pointermove', markInteract);
+window.addEventListener('pointerdown', markInteract);
+window.addEventListener('keydown', markInteract);
+
+function updateUIVisibility(now){
+  if (CAPTURE) return;
+  if (now - lastInteract > 3000){
+    uiEl.classList.add('faded');
+  }
+}
+
+function updateBallCountUI(){
+  const el = document.getElementById('ballCount');
+  if (el) el.textContent = String(balls.length);
+}
+
+function buildDots(){
+  const dotsEl = document.getElementById('dots');
+  dotsEl.innerHTML = '';
+  PALETTES.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === paletteIdx ? ' active' : '');
+    d.title = p.name;
+    d.addEventListener('click', () => setPreset(i));
+    dotsEl.appendChild(d);
+  });
+}
+
+function setPreset(i){
+  paletteIdx = ((i % PALETTES.length) + PALETTES.length) % PALETTES.length;
+  pal = PALETTES[paletteIdx];
+  document.querySelectorAll('.dot').forEach((d, idx) => {
+    d.classList.toggle('active', idx === paletteIdx);
+  });
+  if (window.studio && window.studio.params) window.studio.params.preset = paletteIdx;
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === '1') setPreset(0);
+  else if (e.key === '2') setPreset(1);
+  else if (e.key === '3') setPreset(2);
+  else if (e.key === 'm' || e.key === 'M'){
+    ensureAudio();
+    muted = !muted;
+  }
+});
+
+// ---------- init ----------
+function initScene(){
+  cx = W/2;
+  cy = H/2;
+  baseOuterRadius = Math.min(W, H) * 0.40;
+  RING_COUNT = 4;
+  initStarfield();
+  resetScene();
+}
+
+if (!CAPTURE){
+  buildDots();
+} else {
+  document.getElementById('ui').style.display = 'none';
+}
+
+window.addEventListener('resize', () => {
+  const oldW = W, oldH = H;
+  resize();
+  cx = W/2; cy = H/2;
+  baseOuterRadius = Math.min(W, H) * 0.40;
+  initStarfield();
+});
+
+initScene();
+
+// ---------- window.studio API ----------
+window.__debugState = function(){
+  return {
+    balls: balls.map(b => ({x:b.x,y:b.y,vx:b.vx,vy:b.vy,dist:Math.hypot(b.x-cx,b.y-cy)})),
+    rings: rings.map(r => ({idx:r.idx,radius:r.radius,angle:r.angle,gapWidth:r.gapWidth,alive:r.alive,emptyTimer:r.emptyTimer}))
+  };
+};
+window.studio.presets = PALETTES.map(p => p.name);
+window.studio.setPreset = setPreset;
+window.studio.params = {
+  preset: paletteIdx,
+  ballCount: () => balls.length,
+  maxBalls: MAX_BALLS,
+  loopSeconds: LOOP_SECONDS
+};
+
+if (CAPTURE){
+  setPreset(0);
+}
+
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

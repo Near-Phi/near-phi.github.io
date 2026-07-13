@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLOOM: Sacred Geometry Spirograph | Near-Phi</title>
+<meta name="description" content="A recursive epicycle spirograph with N-fold symmetry and accumulating luminous trails: circles on circles on circles bloom into glowing sacred-geometry mandalas, live in WebGL2.">
+<link rel="canonical" href="https://near-phi.github.io/spirograph.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="BLOOM: Sacred Geometry Spirograph">
+<meta property="og:description" content="Recursive epicycles + N-fold symmetry replication, accumulating into glowing sacred-geometry mandalas. Live in the browser.">
+<meta property="og:url" content="https://near-phi.github.io/spirograph.html">
+<meta property="og:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<meta name="twitter:title" content="BLOOM: Sacred Geometry Spirograph">
+<meta name="twitter:description" content="Circles on circles on circles, golden-ratio speeds, N-fold symmetry, glowing accumulating trails.">
+<meta name="twitter:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "BLOOM Spirograph",
+  "url": "https://near-phi.github.io/spirograph.html",
+  "description": "A recursive epicycle drawing machine with N-fold symmetry replication and accumulating glowing trails, forming sacred-geometry mandalas in real time.",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isPartOf": { "@type": "WebSite", "name": "Near-Phi", "url": "https://near-phi.github.io/" },
+  "publisher": { "@type": "Organization", "name": "Near-Phi", "url": "https://near-phi.github.io/" }
+}
+</script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { background:#000; overflow:hidden; height:100%; width:100%; }
+  body { font-family:'Consolas','SF Mono',monospace; }
+  #gl { display:block; width:100vw; height:100vh; touch-action:none; cursor:grab; }
+  #gl:active { cursor:grabbing; }
+  #fallback {
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    color:#ffcf6a; font-size:14px; text-align:center; padding:24px; background:#000;
+  }
+  #ui {
+    position:fixed; left:18px; bottom:16px; z-index:10;
+    display:flex; align-items:center; gap:14px;
+    transition:opacity 0.6s ease;
+    pointer-events:none;
+  }
+  #ui.show { pointer-events:auto; }
+  #title {
+    color:#ffcf6a; font-size:13px; letter-spacing:0.35em; font-weight:600;
+    text-shadow:0 0 8px rgba(255,207,106,0.6);
+  }
+  #dots { display:flex; gap:8px; }
+  .dot {
+    width:9px; height:9px; border-radius:50%;
+    border:1px solid rgba(255,207,106,0.5);
+    background:rgba(255,207,106,0.08);
+    cursor:pointer; pointer-events:auto;
+    transition:all 0.25s ease;
+  }
+  .dot:hover { background:rgba(255,207,106,0.35); }
+  .dot.active { background:#ffcf6a; box-shadow:0 0 10px 2px rgba(255,207,106,0.8); }
+  #ctxlost {
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    color:#ff5959; font-size:16px; background:#000; z-index:999; font-weight:700;
+    letter-spacing:0.1em;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+<div id="fallback">WebGL2 is required for BLOOM and is unavailable in this browser.</div>
+<div id="ctxlost">WEBGL CONTEXT LOST — reload to resume BLOOM</div>
+
+<div id="ui" class="show">
+  <span id="title">BLOOM</span>
+  <div id="dots">
+    <div class="dot active" data-i="0" title="GOLD BLOOM"></div>
+    <div class="dot" data-i="1" title="DUOTONE"></div>
+    <div class="dot" data-i="2" title="SPECTRUM"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const capture = /[?&]capture=1/.test(location.search);
+  const canvas = document.getElementById('gl');
+  const uiEl = document.getElementById('ui');
+  const fallbackEl = document.getElementById('fallback');
+  const ctxLostEl = document.getElementById('ctxlost');
+
+  if (capture) uiEl.style.display = 'none';
+
+  const gl = canvas.getContext('webgl2', { alpha:false, antialias:false, preserveDrawingBuffer:false, powerPreference:'high-performance' });
+  if (!gl) {
+    fallbackEl.style.display = 'flex';
+    throw new Error('WebGL2 unavailable');
+  }
+
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    ctxLostEl.style.display = 'flex';
+  }, false);
+
+  // ------------------------------------------------------------
+  // GL helpers
+  // ------------------------------------------------------------
+  function compile(type, src) {
+    const sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(sh);
+      console.error('Shader compile error:', log, src);
+      throw new Error('Shader compile error: ' + log);
+    }
+    return sh;
+  }
+  function link(vsSrc, fsSrc) {
+    const vs = compile(gl.VERTEX_SHADER, vsSrc);
+    const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      const log = gl.getProgramInfoLog(prog);
+      console.error('Program link error:', log);
+      throw new Error('Program link error: ' + log);
+    }
+    return prog;
+  }
+
+  const QUAD_VS = `#version 300 es
+  layout(location=0) in vec2 aPos;
+  out vec2 vUv;
+  void main(){
+    vUv = aPos * 0.5 + 0.5;
+    gl_Position = vec4(aPos, 0.0, 1.0);
+  }`;
+
+  const quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  function bindQuad() {
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  }
+  function drawQuad() {
+    bindQuad();
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  // ------------------------------------------------------------
+  // Framebuffers: accumulation ping-pong + bloom passes
+  // ------------------------------------------------------------
+  let W = 0, H = 0;
+  let accumFBO = [null, null];
+  let accumTex = [null, null];
+  let brightFBO = null, brightTex = null;
+  let blurFBO = [null, null], blurTex = [null, null];
+  let accumIdx = 0;
+
+  function makeTex(w, h, filter) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+  function makeFBO(tex) {
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return fbo;
+  }
+
+  function allocFBOs(w, h) {
+    // check float-linear support; fall back gracefully
+    gl.getExtension('EXT_color_buffer_float');
+    const linExt = gl.getExtension('OES_texture_float_linear');
+    const filt = linExt ? gl.LINEAR : gl.NEAREST;
+
+    for (let i=0;i<2;i++){
+      accumTex[i] = makeTex(w, h, gl.LINEAR);
+      accumFBO[i] = makeFBO(accumTex[i]);
+      // clear to black
+      gl.bindFramebuffer(gl.FRAMEBUFFER, accumFBO[i]);
+      gl.viewport(0,0,w,h);
+      gl.clearColor(0,0,0,1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    brightTex = makeTex(w>>1, h>>1, filt);
+    brightFBO = makeFBO(brightTex);
+    for (let i=0;i<2;i++){
+      blurTex[i] = makeTex(w>>1, h>>1, filt);
+      blurFBO[i] = makeFBO(blurTex[i]);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(2, Math.floor(window.innerWidth * dpr));
+    const h = Math.max(2, Math.floor(window.innerHeight * dpr));
+    if (w === W && h === H) return;
+    W = w; H = h;
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    allocFBOs(W, H);
+  }
+
+  // ------------------------------------------------------------
+  // Programs
+  // ------------------------------------------------------------
+
+  // 1) Trail draw: draws glowing line segments (epicycle pen path, symmetry-replicated)
+  //    into the accumulation buffer using additive blending, on top of the previous
+  //    (faded) accumulation frame.
+  const TRAIL_VS = `#version 300 es
+  layout(location=0) in vec2 aPos;   // point on the traced path, in [-1,1] figure space
+  layout(location=1) in float aHue;  // 0..1 hue-cycle position along trail (for spectral preset)
+  layout(location=2) in float aAge;  // 0..1 age within this frame's sub-stroke (for AA taper)
+  uniform mat3 uXform;      // global rotation + aspect fit
+  uniform float uSymCount;
+  uniform float uSymIndex;  // which symmetry copy (0..N-1), passed as instance-ish via uniform per draw
+  uniform int uPalette;
+  uniform vec3 uColorA;
+  uniform vec3 uColorB;
+  out vec3 vColor;
+  out float vAge;
+  #define PI 3.14159265359
+  vec3 hue2rgb(float h){
+    vec3 p = abs(fract(h + vec3(1.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);
+    return clamp(p - 1.0, 0.0, 1.0);
+  }
+  void main(){
+    float ang = uSymIndex * (2.0*PI/uSymCount);
+    float ca = cos(ang), sa = sin(ang);
+    mat2 symRot = mat2(ca, sa, -sa, ca);
+    vec2 p = symRot * aPos;
+    vec3 xp = uXform * vec3(p, 1.0);
+    gl_Position = vec4(xp.xy, 0.0, 1.0);
+    gl_PointSize = 1.0;
+    vec3 col;
+    if (uPalette == 0) {
+      col = uColorA; // gold
+    } else if (uPalette == 1) {
+      col = mix(uColorA, uColorB, aHue); // duotone along trail param
+    } else {
+      col = hue2rgb(aHue + uSymIndex * 0.0); // spectral hue-cycle
+    }
+    vColor = col;
+    vAge = aAge;
+  }`;
+
+  const TRAIL_FS = `#version 300 es
+  precision highp float;
+  in vec3 vColor;
+  in float vAge;
+  out vec4 outColor;
+  uniform float uIntensity;
+  void main(){
+    // vAge: 0 at tail (old, blends into existing accum) -> 1 at head (freshest, brightest)
+    float w = 0.15 + 0.85 * vAge;
+    outColor = vec4(vColor * uIntensity * w, 1.0);
+  }`;
+
+  const trailProg = link(TRAIL_VS, TRAIL_FS);
+  const trailLoc = {
+    xform: gl.getUniformLocation(trailProg, 'uXform'),
+    symCount: gl.getUniformLocation(trailProg, 'uSymCount'),
+    symIndex: gl.getUniformLocation(trailProg, 'uSymIndex'),
+    palette: gl.getUniformLocation(trailProg, 'uPalette'),
+    colorA: gl.getUniformLocation(trailProg, 'uColorA'),
+    colorB: gl.getUniformLocation(trailProg, 'uColorB'),
+    intensity: gl.getUniformLocation(trailProg, 'uIntensity'),
+  };
+
+  // 2) Fade pass: copies previous accum texture into current, multiplied by decay factor.
+  const FADE_FS = `#version 300 es
+  precision highp float;
+  in vec2 vUv;
+  out vec4 outColor;
+  uniform sampler2D uTex;
+  uniform float uDecay;
+  void main(){
+    vec3 c = texture(uTex, vUv).rgb * uDecay;
+    outColor = vec4(c, 1.0);
+  }`;
+  const fadeProg = link(QUAD_VS, FADE_FS);
+  const fadeLoc = { tex: gl.getUniformLocation(fadeProg, 'uTex'), decay: gl.getUniformLocation(fadeProg, 'uDecay') };
+
+  // 3) Bright-pass extraction
+  const BRIGHT_FS = `#version 300 es
+  precision highp float;
+  in vec2 vUv;
+  out vec4 outColor;
+  uniform sampler2D uTex;
+  uniform float uThreshold;
+  void main(){
+    vec3 c = texture(uTex, vUv).rgb;
+    float lum = dot(c, vec3(0.299,0.587,0.114));
+    float w = 1.0 - smoothstep(uThreshold, uThreshold + 0.35, lum) ;
+    // keep bright parts: invert logic to select ABOVE threshold safely (a<b form)
+    float k = smoothstep(uThreshold, uThreshold + 0.35, lum);
+    outColor = vec4(c * k, 1.0);
+  }`;
+  const brightProg = link(QUAD_VS, BRIGHT_FS);
+  const brightLoc = { tex: gl.getUniformLocation(brightProg, 'uTex'), thresh: gl.getUniformLocation(brightProg, 'uThreshold') };
+
+  // 4) Separable Gaussian blur
+  const BLUR_FS = `#version 300 es
+  precision highp float;
+  in vec2 vUv;
+  out vec4 outColor;
+  uniform sampler2D uTex;
+  uniform vec2 uDir;      // (1/w,0) or (0,1/h)
+  void main(){
+    vec3 sum = texture(uTex, vUv).rgb * 0.227027;
+    vec2 o1 = uDir * 1.3846153846;
+    vec2 o2 = uDir * 3.2307692308;
+    sum += texture(uTex, vUv + o1).rgb * 0.3162162162;
+    sum += texture(uTex, vUv - o1).rgb * 0.3162162162;
+    sum += texture(uTex, vUv + o2).rgb * 0.0702702703;
+    sum += texture(uTex, vUv - o2).rgb * 0.0702702703;
+    outColor = vec4(sum, 1.0);
+  }`;
+  const blurProg = link(QUAD_VS, BLUR_FS);
+  const blurLoc = { tex: gl.getUniformLocation(blurProg, 'uTex'), dir: gl.getUniformLocation(blurProg, 'uDir') };
+
+  // 5) Composite: accum + bloom -> screen, with slight vignette
+  const COMP_FS = `#version 300 es
+  precision highp float;
+  in vec2 vUv;
+  out vec4 outColor;
+  uniform sampler2D uAccum;
+  uniform sampler2D uBloom;
+  uniform float uBloomStrength;
+  void main(){
+    vec3 base = texture(uAccum, vUv).rgb;
+    vec3 bloom = texture(uBloom, vUv).rgb;
+    vec3 col = base + bloom * uBloomStrength;
+    // tonemap (reinhard-ish) to tame hot spots while keeping punch
+    col = col / (1.0 + col * 0.35);
+    col = pow(col, vec3(0.92));
+    vec2 d = vUv - 0.5;
+    float vig = 1.0 - dot(d,d) * 0.55;
+    col *= vig;
+    outColor = vec4(col, 1.0);
+  }`;
+  const compProg = link(QUAD_VS, COMP_FS);
+  const compLoc = {
+    accum: gl.getUniformLocation(compProg, 'uAccum'),
+    bloom: gl.getUniformLocation(compProg, 'uBloom'),
+    strength: gl.getUniformLocation(compProg, 'uBloomStrength'),
+  };
+
+  // ------------------------------------------------------------
+  // Epicycle path generation (CPU) — recursive circles-on-circles
+  // ------------------------------------------------------------
+  const PHI = 1.6180339887498949;
+  const TWO_PI = Math.PI * 2;
+
+  // Points-per-frame along the pen path (bounded — scar tissue #1).
+  const SEG_POINTS = 420;
+
+  // golden-ratio radii/speed ladder per level (levels count set by params.levels)
+  function buildLevels(levelCount) {
+    const levels = [];
+    let r = 0.62;
+    // integer speed multiples ensure exact 10s loop at preset 0's uSpeedMul=1.
+    // Wider spread (esp. higher multiples on inner levels) gives the inner circles
+    // real angular velocity so their small radius still traces dense fractal
+    // filigree near the center instead of a smooth, empty-looking core.
+    const speedSteps = [1, 4, 9, 14, 21];
+    // radii decay slower than raw 1/PHI so inner levels stay large enough to be
+    // visible while still golden-ratio-flavored (r_i = r0 * PHI^-(i*0.72)).
+    for (let i = 0; i < levelCount; i++) {
+      levels.push({
+        radius: r * Math.pow(PHI, -i * 0.72),
+        speed: speedSteps[i % speedSteps.length] * (i % 2 === 0 ? 1 : -1),
+        phase: (i * PHI) % TWO_PI
+      });
+    }
+    // normalize so sum of radii ~= 0.95 (keeps figure in frame)
+    const sum = levels.reduce((a,l)=>a+l.radius, 0);
+    const scale = 0.95 / sum;
+    levels.forEach(l => l.radius *= scale);
+    return levels;
+  }
+
+  let levels = buildLevels(3);
+
+  // CPU buffers for trail geometry (line strip -> we emit as GL_LINES pairs for width control via triangle strip?
+  // Simpler & robust: draw as GL_LINE_STRIP with linewidth 1-2 (WebGL2 supports lineWidth via state, often clamped to 1
+  // on ANGLE/D3D11 — so we build a thin camera-facing quad strip per segment instead for reliable 1-2px glow lines.)
+  const MAX_QUAD_VERTS = SEG_POINTS * 6; // 2 triangles per segment
+  const posArr = new Float32Array(MAX_QUAD_VERTS * 2);
+  const hueArr = new Float32Array(MAX_QUAD_VERTS);
+  const ageArr = new Float32Array(MAX_QUAD_VERTS);
+
+  const trailVAO = gl.createVertexArray();
+  gl.bindVertexArray(trailVAO);
+  const posBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, posArr.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const hueBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, hueBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, hueArr.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 0, 0);
+  const ageBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, ageBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, ageArr.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+
+  // Evaluate the epicycle chain at parametric time t (seconds), returns {x,y}
+  function epicyclePoint(t, phaseSweep) {
+    let x = 0, y = 0;
+    let accAngScale = 1.0;
+    for (let i = 0; i < levels.length; i++) {
+      const lv = levels[i];
+      const ang = t * lv.speed * (TWO_PI / 10.0) + lv.phase + phaseSweep * (i+1) * 0.15;
+      x += lv.radius * Math.cos(ang);
+      y += lv.radius * Math.sin(ang);
+    }
+    return [x, y];
+  }
+
+  let quadVertCount = 0;
+  // Trace a fixed, generously-overlapping arc window every frame (NOT just the tiny
+  // per-frame dt) so consecutive frames' strokes overlap heavily and the additive
+  // accumulation builds a dense, continuous, un-dashed line instead of sparse dots.
+  const ARC_WINDOW = 0.6; // seconds of parametric travel drawn each frame
+  function buildTrailGeometry(tNow, dt, hueBase, phaseSweep) {
+    const steps = SEG_POINTS;
+    let vi = 0, hi = 0, ai = 0;
+    const lineHalfWidth = 0.0042; // ~1.5-2px glow core in NDC at typical viewport widths
+    let px, py, haveP = false;
+    for (let s = 0; s < steps; s++) {
+      const u = s/(steps-1);
+      const tt = tNow - ARC_WINDOW * (1 - u);
+      const [x, y] = epicyclePoint(tt, phaseSweep);
+      if (haveP) {
+        let dx = x - px, dy = y - py;
+        let len = Math.sqrt(dx*dx+dy*dy);
+        if (len > 1e-7) {
+          let nx = -dy/len * lineHalfWidth, ny = dx/len * lineHalfWidth;
+          // fade the alpha-equivalent (via age->intensity in shader) toward the tail (u near 0)
+          const hueT = hueBase + u;
+          const ageT = u;
+          // triangle 1
+          posArr[vi++] = px-nx; posArr[vi++] = py-ny;
+          posArr[vi++] = px+nx; posArr[vi++] = py+ny;
+          posArr[vi++] = x-nx;  posArr[vi++] = y-ny;
+          // triangle 2
+          posArr[vi++] = px+nx; posArr[vi++] = py+ny;
+          posArr[vi++] = x+nx;  posArr[vi++] = y+ny;
+          posArr[vi++] = x-nx;  posArr[vi++] = y-ny;
+          for (let k=0;k<6;k++){ hueArr[hi++] = (hueT % 1 + 1) % 1; ageArr[ai++] = ageT; }
+        }
+      }
+      px = x; py = y; haveP = true;
+    }
+    quadVertCount = vi / 2;
+    gl.bindVertexArray(trailVAO);
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, posArr.subarray(0, vi));
+    gl.bindBuffer(gl.ARRAY_BUFFER, hueBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, hueArr.subarray(0, hi));
+    gl.bindBuffer(gl.ARRAY_BUFFER, ageBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, ageArr.subarray(0, ai));
+    gl.bindVertexArray(null);
+  }
+
+  // ------------------------------------------------------------
+  // Studio state / params / presets
+  // ------------------------------------------------------------
+  const PALETTES = [
+    { colorA:[1.0, 0.812, 0.416], colorB:[1.0, 0.812, 0.416] },       // 0 gold
+    { colorA:[0.35, 0.949, 1.0],  colorB:[1.0, 0.35, 0.839] },        // 1 cyan/magenta duotone
+    { colorA:[1,1,1], colorB:[1,1,1] },                                // 2 spectral (hue2rgb driven)
+  ];
+
+  const params = {
+    symmetry: 8,
+    levels: 3,
+    fade: 0.9955,
+    speed: 1.0,
+  };
+
+  let currentPreset = 0;
+  let rotationUser = 0;      // user drag rotation (radians)
+  let dragging = false;
+  let lastPointer = null;
+
+  function setPreset(i) {
+    i = ((i % 3) + 3) % 3;
+    currentPreset = i;
+    document.querySelectorAll('.dot').forEach((d,idx)=>d.classList.toggle('active', idx===i));
+    if (i === 0) { params.symmetry = 8; params.levels = 3; params.fade = 0.9955; params.speed = 1.0; }
+    if (i === 1) { params.symmetry = 6; params.levels = 4; params.fade = 0.9955; params.speed = 0.85; }
+    if (i === 2) { params.symmetry = 12; params.levels = 4; params.fade = 0.9955; params.speed = 1.15; }
+    levels = buildLevels(params.levels);
+  }
+
+  window.studio = {
+    presets: [ {name:'GOLD BLOOM'}, {name:'DUOTONE'}, {name:'SPECTRUM'} ],
+    setPreset,
+    params,
+  };
+
+  document.querySelectorAll('.dot').forEach(dot => {
+    dot.addEventListener('click', () => setPreset(parseInt(dot.dataset.i, 10)));
+  });
+
+  setPreset(0);
+
+  // ------------------------------------------------------------
+  // Interaction: drag to rotate, scroll to change symmetry
+  // ------------------------------------------------------------
+  canvas.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    lastPointer = [e.clientX, e.clientY];
+    canvas.setPointerCapture(e.pointerId);
+    wakeUI();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    wakeUI();
+    if (!dragging || !lastPointer) return;
+    const dx = e.clientX - lastPointer[0];
+    rotationUser += dx * 0.005;
+    lastPointer = [e.clientX, e.clientY];
+  });
+  window.addEventListener('pointerup', () => { dragging = false; lastPointer = null; });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    wakeUI();
+    const opts = [4,6,8,10,12,16];
+    let idx = opts.indexOf(params.symmetry);
+    if (idx === -1) idx = 2;
+    idx += (e.deltaY > 0 ? 1 : -1);
+    idx = Math.max(0, Math.min(opts.length-1, idx));
+    params.symmetry = opts[idx];
+  }, { passive:false });
+
+  // ------------------------------------------------------------
+  // UI idle fade
+  // ------------------------------------------------------------
+  let lastActivity = performance.now();
+  function wakeUI() {
+    lastActivity = performance.now();
+    if (!capture) { uiEl.style.opacity = '1'; uiEl.classList.add('show'); }
+  }
+  window.addEventListener('mousemove', wakeUI);
+  window.addEventListener('pointerdown', wakeUI);
+  window.addEventListener('keydown', wakeUI);
+  wakeUI();
+
+  // ------------------------------------------------------------
+  // Main loop
+  // ------------------------------------------------------------
+  window.addEventListener('resize', resize);
+  resize();
+
+  const t0 = performance.now();
+  let lastT = t0;
+  let simTime = 0; // seconds, drives epicycle phase — accumulates at params.speed rate
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    resize();
+
+    const dtMs = Math.min(50, now - lastT); // bound dt (avoid huge catch-up after tab hidden)
+    lastT = now;
+    const dt = (dtMs / 1000) * params.speed;
+    simTime += dt;
+
+    // idle UI fade
+    if (!capture) {
+      const idle = now - lastActivity;
+      uiEl.style.opacity = idle > 3000 ? '0' : '1';
+      uiEl.classList.toggle('show', idle <= 3000);
+    }
+
+    // global slow rotation ~360deg/40s + user drag
+    const globalRot = (simTime * (TWO_PI/40)) + rotationUser;
+    // petal-bloom phase sweep: slow oscillation so epicycle phases breathe open/closed
+    const phaseSweep = Math.sin(simTime * (TWO_PI/20)) * 0.5 + 0.5; // 0..1 over 20s, smooth
+
+    // aspect-fit matrix: keep figure centered & undistorted, rotated by globalRot
+    const aspect = W / H;
+    const fitScale = aspect >= 1 ? 1.0/aspect : 1.0;
+    const ca = Math.cos(globalRot), sa = Math.sin(globalRot);
+    // column-major mat3: [x' ; y' ; 1] = M * [x;y;1], scaled to fit + rotated
+    const sx = fitScale, sy = 1.0;
+    const uXform = new Float32Array([
+      ca*sx, sa*sy, 0,
+     -sa*sx, ca*sy, 0,
+      0,     0,     1
+    ]);
+
+    // ---- 1) draw new trail segment additively into the "write" accum target,
+    //         after seeding it with the faded previous accum (fade pass) ----
+    const readIdx = accumIdx;
+    const writeIdx = 1 - accumIdx;
+
+    // fade previous into write buffer
+    gl.bindFramebuffer(gl.FRAMEBUFFER, accumFBO[writeIdx]);
+    gl.viewport(0,0,W,H);
+    gl.disable(gl.BLEND);
+    gl.useProgram(fadeProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, accumTex[readIdx]);
+    gl.uniform1i(fadeLoc.tex, 0);
+    gl.uniform1f(fadeLoc.decay, params.fade);
+    drawQuad();
+
+    // build this frame's trail geometry (one continuous arc segment covering dt of travel,
+    // sampled densely so it looks continuous even at high speed)
+    buildTrailGeometry(simTime, Math.max(dt, 1/240), (simTime*0.05), phaseSweep);
+
+    // additive-draw the symmetry-replicated trail into the write buffer
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.useProgram(trailProg);
+    gl.bindVertexArray(trailVAO);
+    gl.uniformMatrix3fv(trailLoc.xform, false, uXform);
+    gl.uniform1f(trailLoc.symCount, params.symmetry);
+    gl.uniform1i(trailLoc.palette, currentPreset);
+    const pal = PALETTES[currentPreset];
+    gl.uniform3fv(trailLoc.colorA, pal.colorA);
+    gl.uniform3fv(trailLoc.colorB, pal.colorB);
+    gl.uniform1f(trailLoc.intensity, 0.22);
+    for (let k = 0; k < params.symmetry; k++) {
+      gl.uniform1f(trailLoc.symIndex, k);
+      gl.drawArrays(gl.TRIANGLES, 0, quadVertCount);
+    }
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+
+    accumIdx = writeIdx;
+
+    // ---- 2) bloom: bright-pass + separable blur (half-res) ----
+    gl.bindFramebuffer(gl.FRAMEBUFFER, brightFBO);
+    gl.viewport(0,0,W>>1,H>>1);
+    gl.useProgram(brightProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, accumTex[accumIdx]);
+    gl.uniform1i(brightLoc.tex, 0);
+    gl.uniform1f(brightLoc.thresh, 0.35);
+    drawQuad();
+
+    // blur ping-pong (bounded iterations — scar tissue #1)
+    let srcTex = brightTex;
+    const BLUR_PASSES = 4;
+    for (let p = 0; p < BLUR_PASSES; p++) {
+      const dst = blurFBO[p % 2];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst);
+      gl.viewport(0,0,W>>1,H>>1);
+      gl.useProgram(blurProg);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, srcTex);
+      gl.uniform1i(blurLoc.tex, 0);
+      const horiz = (p % 2 === 0);
+      gl.uniform2f(blurLoc.dir, horiz ? 1.0/(W>>1) : 0.0, horiz ? 0.0 : 1.0/(H>>1));
+      drawQuad();
+      srcTex = blurTex[p % 2];
+    }
+
+    // ---- 3) composite to screen ----
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0,0,W,H);
+    gl.useProgram(compProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, accumTex[accumIdx]);
+    gl.uniform1i(compLoc.accum, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(compLoc.bloom, 1);
+    gl.uniform1f(compLoc.strength, 0.9);
+    drawQuad();
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+<div id="near-phi-badge" style="position:fixed;bottom:10px;right:10px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(10,10,15,.82);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 12px;font:600 11px/1.2 'Segoe UI',system-ui,sans-serif;backdrop-filter:blur(4px)">
+  <a href="https://near-phi.github.io/" style="color:#c8c8d8;text-decoration:none">Near<span style="color:#4a9eff">Phi</span></a>
+  <span style="color:#3a3a4a">|</span>
+  <a href="https://x.com/Near_Phi" style="color:#6a6a7a;text-decoration:none;font-weight:400">@Near_Phi</a>
+</div>
+
+</body>
+</html>

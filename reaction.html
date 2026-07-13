@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MORPHOGENESIS — Near-Phi Studio</title>
+<meta name="description" content="GPU Gray-Scott reaction-diffusion that morphs continuously between coral, mitosis, worm and wave regimes with embossed glossy relief lighting.">
+<style>
+  html,body{margin:0;padding:0;background:#000;overflow:hidden;width:100%;height:100%;}
+  canvas{display:block;width:100vw;height:100vh;background:#000;}
+  #ui{
+    position:fixed; left:0; right:0; bottom:0; top:0; pointer-events:none;
+    font-family:'Consolas','SF Mono',ui-monospace,monospace;
+    color:#cfe9ff; z-index:10;
+    transition:opacity 1s ease;
+  }
+  #title{
+    position:fixed; top:22px; left:26px;
+    font-size:14px; letter-spacing:0.42em; font-weight:600;
+    color:#dff3ff; text-shadow:0 0 12px rgba(140,220,255,0.65), 0 0 28px rgba(120,180,255,0.35);
+    opacity:0.9;
+  }
+  #sub{
+    position:fixed; top:44px; left:26px;
+    font-size:9px; letter-spacing:0.28em; color:#7fb8d8; opacity:0.55;
+  }
+  #dots{
+    position:fixed; bottom:20px; left:26px; display:flex; gap:12px;
+    pointer-events:auto;
+  }
+  .dot{
+    width:9px; height:9px; border-radius:50%;
+    background:rgba(200,230,255,0.18);
+    border:1px solid rgba(200,230,255,0.4);
+    cursor:pointer; transition:all .25s ease;
+  }
+  .dot.active{
+    background:#8fe0ff;
+    box-shadow:0 0 10px rgba(140,220,255,0.9), 0 0 20px rgba(140,220,255,0.5);
+    border-color:#dff6ff;
+  }
+  #fallback{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    color:#8fe0ff; font-family:monospace; font-size:14px; text-align:center; padding:2em;
+    background:#000;
+  }
+  #ctxlost{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+    color:#ff6a6a; font-family:monospace; font-size:16px; text-align:center; padding:2em;
+    background:rgba(0,0,0,0.92); z-index:999; letter-spacing:0.05em;
+  }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="ui">
+  <div id="title">MORPHOGENESIS</div>
+  <div id="sub">GRAY&#8211;SCOTT &middot; REACTION&#8211;DIFFUSION</div>
+  <div id="dots">
+    <div class="dot" data-i="0"></div>
+    <div class="dot" data-i="1"></div>
+    <div class="dot" data-i="2"></div>
+  </div>
+</div>
+<div id="fallback">WebGL2 with float textures is required for this piece.<br>Try a recent Chrome/Edge on desktop.</div>
+<div id="ctxlost">SIGNAL LOST &mdash; GPU CONTEXT DROPPED<br><span style="font-size:12px;opacity:.7">reconnecting&hellip;</span></div>
+
+<script>
+(function(){
+"use strict";
+
+var qs = new URLSearchParams(location.search);
+var CAPTURE = qs.get('capture') === '1';
+
+var canvas = document.getElementById('gl');
+var gl = canvas.getContext('webgl2', { antialias:false, alpha:false, premultipliedAlpha:false, preserveDrawingBuffer:false, powerPreference:'high-performance' });
+
+if (!gl) {
+  document.getElementById('fallback').style.display = 'flex';
+  throw new Error('no webgl2');
+}
+
+var extColor = gl.getExtension('EXT_color_buffer_float');
+var extLinear = gl.getExtension('OES_texture_float_linear');
+if (!extColor) {
+  document.getElementById('fallback').style.display = 'flex';
+  throw new Error('no float color buffer support');
+}
+
+// ---------- context loss handling (scar 5) ----------
+canvas.addEventListener('webglcontextlost', function(e){
+  e.preventDefault();
+  document.getElementById('ctxlost').style.display = 'flex';
+}, false);
+canvas.addEventListener('webglcontextrestored', function(){
+  location.reload();
+}, false);
+
+// ---------- GL helpers ----------
+function compile(type, src){
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error('shader compile error:', gl.getShaderInfoLog(s));
+    console.error(src);
+  }
+  return s;
+}
+function program(vsSrc, fsSrc){
+  var p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)){
+    console.error('program link error:', gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+var quadVS = "#version 300 es\n" +
+"layout(location=0) in vec2 aPos;\n" +
+"out vec2 vUv;\n" +
+"void main(){ vUv = aPos*0.5+0.5; gl_Position = vec4(aPos,0.0,1.0); }\n";
+
+var quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+var quadVAO = gl.createVertexArray();
+gl.bindVertexArray(quadVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.bindVertexArray(null);
+
+function drawQuad(){
+  gl.bindVertexArray(quadVAO);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  gl.bindVertexArray(null);
+}
+
+// ---------- simulation resolution (portrait-friendly) ----------
+var SIM_W = 768, SIM_H = 1366;
+
+function makeSimTex(w, h, data){
+  var tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, w, h, 0, gl.RG, gl.FLOAT, data || null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  return tex;
+}
+function makeFBO(tex){
+  var fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  var status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  if (status !== gl.FRAMEBUFFER_COMPLETE){
+    console.error('FBO incomplete:', status.toString(16));
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return fbo;
+}
+
+// ---------- initial seed: symmetric blobs + phi-spiral of dots ----------
+function seedData(w, h){
+  var data = new Float32Array(w*h*2);
+  for (var i=0;i<w*h;i++){ data[i*2]=1.0; data[i*2+1]=0.0; }
+  var cx = w*0.5, cy = h*0.5;
+
+  function stampBlob(x, y, r){
+    var x0 = Math.max(0, Math.floor(x-r-2)), x1 = Math.min(w, Math.ceil(x+r+2));
+    var y0 = Math.max(0, Math.floor(y-r-2)), y1 = Math.min(h, Math.ceil(y+r+2));
+    for (var yy=y0; yy<y1; yy++){
+      for (var xx=x0; xx<x1; xx++){
+        var dx=xx-x, dy=yy-y;
+        var d = Math.sqrt(dx*dx+dy*dy);
+        if (d < r){
+          var idx = (yy*w+xx)*2;
+          var falloff = 0.5*(1.0-Math.cos(Math.PI*(1.0-d/r)));
+          data[idx]   = Math.max(0.0, Math.min(data[idx],   1.0 - 0.9*falloff));
+          data[idx+1] = Math.min(1.0, Math.max(data[idx+1], 0.9*falloff));
+        }
+      }
+    }
+  }
+
+  // central symmetric cluster (3-fold)
+  var baseR = Math.min(w,h)*0.065;
+  for (var k=0;k<3;k++){
+    var ang = k*(Math.PI*2/3);
+    stampBlob(cx+Math.cos(ang)*baseR*2.2, cy+Math.sin(ang)*baseR*2.2, baseR*1.3);
+  }
+  stampBlob(cx, cy, baseR*1.1);
+
+  // phi-spiral of dots for beautiful early growth
+  var GOLDEN = Math.PI*(3.0-Math.sqrt(5.0));
+  var n = 34;
+  var maxR = Math.min(w,h)*0.34;
+  for (var s=0; s<n; s++){
+    var t = s/n;
+    var rr = Math.sqrt(t)*maxR;
+    var th = s*GOLDEN;
+    var px = cx + Math.cos(th)*rr;
+    var py = cy + Math.sin(th)*rr*(h/w>1?1.0:1.0);
+    var dr = baseR*(0.85+0.5*(1.0-t));
+    stampBlob(px, py, dr);
+  }
+
+  return data;
+}
+
+var texA = makeSimTex(SIM_W, SIM_H, seedData(SIM_W, SIM_H));
+var texB = makeSimTex(SIM_W, SIM_H, null);
+var fboA = makeFBO(texA);
+var fboB = makeFBO(texB);
+var srcTex = texA, srcFBO = fboA, dstTex = texB, dstFBO = fboB;
+
+function swapSim(){
+  var t = srcTex; srcTex = dstTex; dstTex = t;
+  var f = srcFBO; srcFBO = dstFBO; dstFBO = f;
+}
+
+// ---------- Gray-Scott simulation shader ----------
+var simFS = "#version 300 es\n" +
+"precision highp float;\n" +
+"uniform sampler2D uState;\n" +
+"uniform vec2 uTexel;\n" +
+"uniform float uF;\n" +
+"uniform float uK;\n" +
+"uniform float uDu;\n" +
+"uniform float uDv;\n" +
+"uniform float uRot;\n" +
+"uniform float uAniso;\n" +
+"in vec2 vUv;\n" +
+"out vec4 outColor;\n" +
+"void main(){\n" +
+"  vec2 uv = texture(uState, vUv).rg;\n" +
+"  float c = cos(uRot); float s = sin(uRot);\n" +
+"  vec2 ax = vec2(c, s) * uTexel;\n" +
+"  vec2 ay = vec2(-s, c) * uTexel;\n" +
+"  float wCardX1 = 0.2 + uAniso*0.04;\n" +
+"  float wCardX2 = 0.2 - uAniso*0.04;\n" +
+"  float wCardY1 = 0.2 - uAniso*0.024;\n" +
+"  float wCardY2 = 0.2 + uAniso*0.024;\n" +
+"  float wDiag = 0.05;\n" +
+"  vec2 lap = vec2(0.0);\n" +
+"  lap += texture(uState, vUv + ax).rg * wCardX1;\n" +
+"  lap += texture(uState, vUv - ax).rg * wCardX2;\n" +
+"  lap += texture(uState, vUv + ay).rg * wCardY1;\n" +
+"  lap += texture(uState, vUv - ay).rg * wCardY2;\n" +
+"  lap += texture(uState, vUv + ax + ay).rg * wDiag;\n" +
+"  lap += texture(uState, vUv + ax - ay).rg * wDiag;\n" +
+"  lap += texture(uState, vUv - ax + ay).rg * wDiag;\n" +
+"  lap += texture(uState, vUv - ax - ay).rg * wDiag;\n" +
+"  lap -= uv * 1.0;\n" +
+"  float u = uv.x, v = uv.y;\n" +
+"  float uvv = u*v*v;\n" +
+"  float du = uDu*lap.x - uvv + uF*(1.0-u);\n" +
+"  float dv = uDv*lap.y + uvv - (uF+uK)*v;\n" +
+"  vec2 next = uv + vec2(du,dv)*1.6;\n" +
+"  next = clamp(next, 0.0, 1.0);\n" +
+"  outColor = vec4(next, 0.0, 1.0);\n" +
+"}\n";
+
+var simProg = program(quadVS, simFS);
+var simU = {
+  uState: gl.getUniformLocation(simProg,'uState'),
+  uTexel: gl.getUniformLocation(simProg,'uTexel'),
+  uF: gl.getUniformLocation(simProg,'uF'),
+  uK: gl.getUniformLocation(simProg,'uK'),
+  uDu: gl.getUniformLocation(simProg,'uDu'),
+  uDv: gl.getUniformLocation(simProg,'uDv'),
+  uRot: gl.getUniformLocation(simProg,'uRot'),
+  uAniso: gl.getUniformLocation(simProg,'uAniso')
+};
+
+// ---------- render shader: emboss-lit gradient mapping ----------
+var renderFS = "#version 300 es\n" +
+"precision highp float;\n" +
+"uniform sampler2D uState;\n" +
+"uniform sampler2D uPrevFrame;\n" +
+"uniform vec2 uTexel;\n" +
+"uniform vec2 uResolution;\n" +
+"uniform vec2 uSimResolution;\n" +
+"uniform int uPreset;\n" +
+"uniform float uTime;\n" +
+"uniform float uBloomMix;\n" +
+"in vec2 vUv;\n" +
+"out vec4 outColor;\n" +
+"\n" +
+"vec3 palette(float t, int preset){\n" +
+"  t = clamp(t, 0.0, 1.0);\n" +
+"  if (preset == 0){\n" +
+"    vec3 a = vec3(0.01,0.015,0.03);\n" +
+"    vec3 b = vec3(0.10,0.55,0.95);\n" +
+"    vec3 c = vec3(0.55,0.15,0.95);\n" +
+"    vec3 d = vec3(1.0,1.0,1.0);\n" +
+"    float t1 = smoothstep(0.0,0.55,t);\n" +
+"    float t2 = smoothstep(0.45,0.85,t);\n" +
+"    float t3 = smoothstep(0.82,1.0,t);\n" +
+"    vec3 col = mix(a,b,t1);\n" +
+"    col = mix(col,c,t2*0.6);\n" +
+"    col = mix(col,d,t3);\n" +
+"    return col;\n" +
+"  } else if (preset == 1){\n" +
+"    vec3 a = vec3(0.0,0.05,0.09);\n" +
+"    vec3 b = vec3(0.0,0.45,0.55);\n" +
+"    vec3 c = vec3(1.0,0.42,0.12);\n" +
+"    vec3 d = vec3(1.0,0.85,0.55);\n" +
+"    float t1 = smoothstep(0.0,0.5,t);\n" +
+"    float t2 = smoothstep(0.45,0.85,t);\n" +
+"    float t3 = smoothstep(0.85,1.0,t);\n" +
+"    vec3 col = mix(a,b,t1);\n" +
+"    col = mix(col,c,t2);\n" +
+"    col = mix(col,d,t3);\n" +
+"    return col;\n" +
+"  } else {\n" +
+"    float hue = fract(t*1.15 + uTime*0.01);\n" +
+"    vec3 p = abs(fract(hue + vec3(0.0,0.3333,0.6667))*6.0-3.0);\n" +
+"    vec3 rgb = clamp(p-1.0, 0.0, 1.0);\n" +
+"    rgb = rgb*rgb*(3.0-2.0*rgb);\n" +
+"    float bright = 0.15 + 0.95*t;\n" +
+"    return rgb*bright;\n" +
+"  }\n" +
+"}\n" +
+"\n" +
+"void main(){\n" +
+"  vec2 texel = 1.0/uSimResolution;\n" +
+"  float v   = texture(uState, vUv).g;\n" +
+"  float vL  = texture(uState, vUv - vec2(texel.x,0.0)).g;\n" +
+"  float vR  = texture(uState, vUv + vec2(texel.x,0.0)).g;\n" +
+"  float vD  = texture(uState, vUv - vec2(0.0,texel.y)).g;\n" +
+"  float vU  = texture(uState, vUv + vec2(0.0,texel.y)).g;\n" +
+"  vec3 normal = normalize(vec3((vL-vR)*10.0, (vD-vU)*10.0, 1.0));\n" +
+"  vec3 lightDir = normalize(vec3(0.45, 0.6, 0.7));\n" +
+"  float diff = max(dot(normal, lightDir), 0.0);\n" +
+"  vec3 viewDir = vec3(0.0,0.0,1.0);\n" +
+"  vec3 halfV = normalize(lightDir+viewDir);\n" +
+"  float spec = pow(max(dot(normal,halfV),0.0), 28.0);\n" +
+"  float tone = clamp(v*2.35, 0.0, 1.0);\n" +
+"  tone = pow(tone, 0.65);\n" +
+"  vec3 base = palette(tone, uPreset);\n" +
+"  float ambient = 0.55 + 0.45*tone;\n" +
+"  vec3 lit = base * (ambient + 0.75*diff);\n" +
+"  lit += vec3(1.0,0.98,0.95) * spec * (0.7 + 0.5*tone);\n" +
+"  float ao = smoothstep(0.02, 0.28, v);\n" +
+"  lit *= (0.6+0.4*ao);\n" +
+"  lit *= 1.35;\n" +
+"  vec3 prev = texture(uPrevFrame, vUv).rgb;\n" +
+"  vec3 bloomed = lit + prev*uBloomMix;\n" +
+"  outColor = vec4(bloomed, 1.0);\n" +
+"}\n";
+
+var renderProg = program(quadVS, renderFS);
+var rU = {
+  uState: gl.getUniformLocation(renderProg,'uState'),
+  uPrevFrame: gl.getUniformLocation(renderProg,'uPrevFrame'),
+  uSimResolution: gl.getUniformLocation(renderProg,'uSimResolution'),
+  uPreset: gl.getUniformLocation(renderProg,'uPreset'),
+  uTime: gl.getUniformLocation(renderProg,'uTime'),
+  uBloomMix: gl.getUniformLocation(renderProg,'uBloomMix')
+};
+
+// bloom blur (simple 2-pass gaussian, small kernel, bounded)
+var blurFS = "#version 300 es\n" +
+"precision highp float;\n" +
+"uniform sampler2D uTex;\n" +
+"uniform vec2 uDir;\n" +
+"uniform vec2 uTexel;\n" +
+"in vec2 vUv;\n" +
+"out vec4 outColor;\n" +
+"void main(){\n" +
+"  vec3 sum = texture(uTex, vUv).rgb * 0.227027;\n" +
+"  vec2 o1 = uDir*uTexel*1.3846;\n" +
+"  vec2 o2 = uDir*uTexel*3.2308;\n" +
+"  sum += texture(uTex, vUv+o1).rgb * 0.3162162;\n" +
+"  sum += texture(uTex, vUv-o1).rgb * 0.3162162;\n" +
+"  sum += texture(uTex, vUv+o2).rgb * 0.0702703;\n" +
+"  sum += texture(uTex, vUv-o2).rgb * 0.0702703;\n" +
+"  outColor = vec4(sum, 1.0);\n" +
+"}\n";
+var blurProg = program(quadVS, blurFS);
+var bU = { uTex: gl.getUniformLocation(blurProg,'uTex'), uDir: gl.getUniformLocation(blurProg,'uDir'), uTexel: gl.getUniformLocation(blurProg,'uTexel') };
+
+// composite (final blit with bloom add + vignette)
+var compFS = "#version 300 es\n" +
+"precision highp float;\n" +
+"uniform sampler2D uScene;\n" +
+"uniform sampler2D uBloom;\n" +
+"in vec2 vUv;\n" +
+"out vec4 outColor;\n" +
+"void main(){\n" +
+"  vec3 scene = texture(uScene, vUv).rgb;\n" +
+"  vec3 bloom = texture(uBloom, vUv).rgb;\n" +
+"  vec3 col = scene + bloom*0.55;\n" +
+"  vec2 d = vUv-0.5;\n" +
+"  float vig = 1.0 - dot(d,d)*0.55;\n" +
+"  col *= vig;\n" +
+"  col = col/(1.0+col*0.35);\n" +
+"  col = pow(col, vec3(0.9));\n" +
+"  outColor = vec4(col, 1.0);\n" +
+"}\n";
+var compProg = program(quadVS, compFS);
+var cU = { uScene: gl.getUniformLocation(compProg,'uScene'), uBloom: gl.getUniformLocation(compProg,'uBloom') };
+
+// ---------- render targets (screen-res, resized on demand) ----------
+var DPR = Math.min(window.devicePixelRatio || 1, 2);
+var W=0, H=0;
+var sceneTexA, sceneFBOA, sceneTexB, sceneFBOB; // ping-pong for bloom feedback "prev frame"
+var bloomTexSmall, bloomFBOSmall, bloomTexSmall2, bloomFBOSmall2;
+var BW=0, BH=0;
+
+function makeColorTex(w,h){
+  var t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  return t;
+}
+
+function resize(){
+  var w = Math.max(2, Math.floor(window.innerWidth*DPR));
+  var h = Math.max(2, Math.floor(window.innerHeight*DPR));
+  if (w===W && h===H) return;
+  W=w; H=h;
+  canvas.width = W; canvas.height = H;
+  canvas.style.width = window.innerWidth+'px';
+  canvas.style.height = window.innerHeight+'px';
+
+  if (sceneFBOA) gl.deleteFramebuffer(sceneFBOA);
+  if (sceneFBOB) gl.deleteFramebuffer(sceneFBOB);
+  if (sceneTexA) gl.deleteTexture(sceneTexA);
+  if (sceneTexB) gl.deleteTexture(sceneTexB);
+  sceneTexA = makeColorTex(W,H); sceneFBOA = makeFBO(sceneTexA);
+  sceneTexB = makeColorTex(W,H); sceneFBOB = makeFBO(sceneTexB);
+  // clear both
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFBOA); gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFBOB); gl.clear(gl.COLOR_BUFFER_BIT);
+
+  BW = Math.max(2, Math.floor(W*0.35));
+  BH = Math.max(2, Math.floor(H*0.35));
+  if (bloomFBOSmall) gl.deleteFramebuffer(bloomFBOSmall);
+  if (bloomFBOSmall2) gl.deleteFramebuffer(bloomFBOSmall2);
+  if (bloomTexSmall) gl.deleteTexture(bloomTexSmall);
+  if (bloomTexSmall2) gl.deleteTexture(bloomTexSmall2);
+  bloomTexSmall = makeColorTex(BW,BH); bloomFBOSmall = makeFBO(bloomTexSmall);
+  bloomTexSmall2 = makeColorTex(BW,BH); bloomFBOSmall2 = makeFBO(bloomTexSmall2);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+window.addEventListener('resize', resize);
+resize();
+
+var sceneSrc = sceneFBOA, sceneSrcTex = sceneTexA, sceneDst = sceneFBOB, sceneDstTex = sceneTexB;
+function swapScene(){
+  var f=sceneSrc; sceneSrc=sceneDst; sceneDst=f;
+  var t=sceneSrcTex; sceneSrcTex=sceneDstTex; sceneDstTex=t;
+}
+
+// ---------- feed/kill closed-loop regime path ----------
+// coral growth -> mitosis dots -> worms/fingerprints -> waves -> back to coral
+var REGIMES = [
+  { f:0.0550, k:0.0620, name:'coral'   },
+  { f:0.0367, k:0.0649, name:'mitosis' },
+  { f:0.0460, k:0.0630, name:'worms'   },
+  { f:0.0140, k:0.0450, name:'waves'   }
+];
+var CYCLE_SECONDS = 30.0;
+
+function smootherstep(t){ t = Math.max(0,Math.min(1,t)); return t*t*t*(t*(t*6-15)+10); }
+
+function getFK(tSec){
+  var n = REGIMES.length;
+  var u = (tSec % CYCLE_SECONDS) / CYCLE_SECONDS * n;
+  var i0 = Math.floor(u) % n;
+  var i1 = (i0+1) % n;
+  var localT = smootherstep(u - Math.floor(u));
+  var a = REGIMES[i0], b = REGIMES[i1];
+  return { f: a.f + (b.f-a.f)*localT, k: a.k + (b.k-a.k)*localT };
+}
+
+// ---------- presets (visual, not chemistry) ----------
+var PRESET_NAMES = ['OBSIDIAN','CORAL','XRAY'];
+var currentPreset = 0;
+
+var studio = {
+  presets: PRESET_NAMES.slice(),
+  params: { preset: currentPreset, cycleSeconds: CYCLE_SECONDS },
+  setPreset: function(i){
+    currentPreset = ((i % PRESET_NAMES.length) + PRESET_NAMES.length) % PRESET_NAMES.length;
+    studio.params.preset = currentPreset;
+    updateDots();
+  }
+};
+window.studio = studio;
+
+var dotsEls = document.querySelectorAll('.dot');
+function updateDots(){
+  dotsEls.forEach(function(d,i){
+    d.classList.toggle('active', i===currentPreset);
+  });
+}
+dotsEls.forEach(function(d){
+  d.addEventListener('click', function(){
+    studio.setPreset(parseInt(d.getAttribute('data-i'),10));
+  });
+});
+updateDots();
+
+// ---------- click / tap to seed a blob at cursor ----------
+function seedAt(nx, ny){
+  // nx, ny in [0,1] screen space -> sim space (account for aspect fit)
+  var sx = Math.floor(nx*SIM_W);
+  var sy = Math.floor((1.0-ny)*SIM_H);
+  var r = Math.min(SIM_W,SIM_H)*0.045;
+
+  var stampFS = "#version 300 es\n" +
+  "precision highp float;\n" +
+  "uniform sampler2D uState;\n" +
+  "uniform vec2 uCenter;\n" +
+  "uniform float uRadius;\n" +
+  "uniform vec2 uSimRes;\n" +
+  "in vec2 vUv;\n" +
+  "out vec4 outColor;\n" +
+  "void main(){\n" +
+  "  vec2 uv = texture(uState, vUv).rg;\n" +
+  "  vec2 pos = vUv*uSimRes;\n" +
+  "  float d = distance(pos, uCenter);\n" +
+  "  float m = 1.0 - smoothstep(0.0, uRadius, d);\n" +
+  "  uv.x = mix(uv.x, 0.05, m);\n" +
+  "  uv.y = mix(uv.y, 0.95, m);\n" +
+  "  outColor = vec4(uv, 0.0, 1.0);\n" +
+  "}\n";
+  if (!seedAt._prog) seedAt._prog = program(quadVS, stampFS);
+  var p = seedAt._prog;
+  gl.useProgram(p);
+  gl.uniform1i(gl.getUniformLocation(p,'uState'), 0);
+  gl.uniform2f(gl.getUniformLocation(p,'uCenter'), sx, sy);
+  gl.uniform1f(gl.getUniformLocation(p,'uRadius'), r);
+  gl.uniform2f(gl.getUniformLocation(p,'uSimRes'), SIM_W, SIM_H);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dstFBO);
+  gl.viewport(0,0,SIM_W,SIM_H);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  drawQuad();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  swapSim();
+}
+
+canvas.addEventListener('pointerdown', function(e){
+  var r = canvas.getBoundingClientRect();
+  var nx = (e.clientX - r.left) / r.width;
+  var ny = (e.clientY - r.top) / r.height;
+  seedAt(nx, ny);
+  bumpUI();
+});
+
+// ---------- UI fade after 3s idle ----------
+var uiEl = document.getElementById('ui');
+var idleTimer = null;
+function bumpUI(){
+  if (CAPTURE){ uiEl.style.opacity='0'; return; }
+  uiEl.style.opacity = '1';
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(function(){ uiEl.style.opacity='0'; }, 3000);
+}
+if (CAPTURE){
+  uiEl.style.opacity = '0';
+  uiEl.style.transition = 'none';
+} else {
+  bumpUI();
+  window.addEventListener('pointermove', bumpUI);
+  window.addEventListener('pointerdown', bumpUI);
+}
+
+if (CAPTURE) studio.setPreset(0);
+
+// ---------- main loop ----------
+var t0 = performance.now();
+var lastFrameT = t0;
+var MIN_STEPS = 10, MAX_STEPS = 12; // bounded (scar 1): 8-12 sim steps/frame, never unbounded
+var simStepCount = 0;
+// Pattern-time is driven by simulation-step count, not wall clock, so a slow
+// software fallback (swiftshader) still reaches mature coral/labyrinth
+// regimes given enough real time, instead of stalling in early growth.
+var STEPS_PER_PATTERN_SECOND = 140; // calibrated so ~20s real time reaches mature growth even under slow (swiftshader) fallback
+
+function stepSim(f, k, rot, nSteps){
+  gl.viewport(0,0,SIM_W,SIM_H);
+  gl.useProgram(simProg);
+  gl.uniform2f(simU.uTexel, 1.0/SIM_W, 1.0/SIM_H);
+  gl.uniform1f(simU.uF, f);
+  gl.uniform1f(simU.uK, k);
+  gl.uniform1f(simU.uDu, 0.16);
+  gl.uniform1f(simU.uDv, 0.08);
+  gl.uniform1f(simU.uRot, rot);
+  gl.uniform1f(simU.uAniso, 0.18*Math.sin(rot*1.7));
+  for (var i=0;i<nSteps;i++){
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dstFBO);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex); // scar 3: never sample tex bound as render target
+    gl.uniform1i(simU.uState, 0);
+    drawQuad();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    swapSim();
+  }
+  simStepCount += nSteps;
+}
+
+function frame(){
+  requestAnimationFrame(frame);
+  if (gl.isContextLost()) return;
+
+  resize();
+
+  var nowT = performance.now();
+  var dtMs = Math.min(nowT - lastFrameT, 100); // clamp huge stalls
+  lastFrameT = nowT;
+  // adaptive step count: slower frames (slow GPU/software fallback) get more
+  // steps per draw to keep pattern-time progressing, still hard-bounded (scar 1)
+  var wantSteps = Math.round((dtMs/1000.0) * STEPS_PER_PATTERN_SECOND / 48.0 * 10.0);
+  var nSteps = Math.max(MIN_STEPS, Math.min(MAX_STEPS, wantSteps || MIN_STEPS));
+
+  var patternSec = simStepCount / STEPS_PER_PATTERN_SECOND;
+  var fk = getFK(patternSec);
+  var rot = patternSec*0.045; // slow anisotropic diffusion rotation -> drift/swirl
+
+  stepSim(fk.f, fk.k, rot, nSteps);
+
+  // ---- render sim state to scene FBO (with prev-frame feedback for soft trail bloom) ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneDst);
+  gl.viewport(0,0,W,H);
+  gl.useProgram(renderProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.uniform1i(rU.uState, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, sceneSrcTex);
+  gl.uniform1i(rU.uPrevFrame, 1);
+  gl.uniform2f(rU.uSimResolution, SIM_W, SIM_H);
+  gl.uniform1i(rU.uPreset, currentPreset);
+  gl.uniform1f(rU.uTime, patternSec);
+  gl.uniform1f(rU.uBloomMix, 0.0); // no ghost trail accumulation; keep clean per spec emboss render
+  drawQuad();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  // NOTE: sceneDstTex now holds this frame's freshly rendered image.
+  // Bloom + composite must read it BEFORE swapScene() runs (scar 3: never
+  // sample a texture bound as a render target, and never read the stale
+  // ping-pong half). Swap happens only at the very end of the frame so next
+  // frame's feedback-read of sceneSrcTex sees this frame's real output.
+
+  // ---- bloom: downsample + blur (bounded 2-pass) ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFBOSmall);
+  gl.viewport(0,0,BW,BH);
+  gl.useProgram(blurProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sceneDstTex);
+  gl.uniform1i(bU.uTex, 0);
+  gl.uniform2f(bU.uDir, 1.0, 0.0);
+  gl.uniform2f(bU.uTexel, 1.0/BW, 1.0/BH);
+  drawQuad();
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, bloomFBOSmall2);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, bloomTexSmall);
+  gl.uniform2f(bU.uDir, 0.0, 1.0);
+  drawQuad();
+
+  // ---- composite to screen ----
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0,0,W,H);
+  gl.useProgram(compProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sceneDstTex);
+  gl.uniform1i(cU.uScene, 0);
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, bloomTexSmall2);
+  gl.uniform1i(cU.uBloom, 1);
+  drawQuad();
+
+  swapScene();
+}
+
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

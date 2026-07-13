@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HYPERSPACE: 4D Polytope Visualizer | Near-Phi</title>
+<meta name="description" content="HYPERSPACE — a rotating 4D polytope visualizer. Tesseract, 24-cell, and 120-cell double-rotated through the fourth dimension, rendered as glowing neon tubes with w-depth color mapping.">
+<link rel="canonical" href="https://near-phi.github.io/tesseract.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="HYPERSPACE: 4D Polytope Visualizer">
+<meta property="og:description" content="Tesseract, 24-cell, and 120-cell double-rotated through the fourth dimension, rendered as glowing neon tubes with w-depth color mapping.">
+<meta property="og:url" content="https://near-phi.github.io/tesseract.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<meta name="twitter:title" content="HYPERSPACE: 4D Polytope Visualizer">
+<meta name="twitter:description" content="Rotating 4D polytopes rendered as glowing neon tubes, live in your browser.">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "HYPERSPACE",
+  "url": "https://near-phi.github.io/tesseract.html",
+  "description": "A browser-based 4D polytope visualizer: tesseract, 24-cell, and 120-cell double-rotated through the fourth dimension and projected into neon-tube 3D geometry.",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isPartOf": { "@type": "WebSite", "name": "Near-Phi", "url": "https://near-phi.github.io/" },
+  "publisher": { "@type": "Organization", "name": "Near-Phi", "url": "https://near-phi.github.io/" }
+}
+</script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #000; overflow: hidden; height: 100%; width: 100%; }
+  body { font-family: 'Consolas', 'Monaco', monospace; }
+  canvas { display: block; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; touch-action: none; }
+
+  #ui {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; flex-direction: column; align-items: center;
+    padding-bottom: 22px; pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  #ui.hidden { opacity: 0; }
+  #title {
+    color: #59f2ff; font-size: 13px; letter-spacing: 4px; font-weight: bold;
+    text-shadow: 0 0 8px rgba(89,242,255,0.8), 0 0 18px rgba(89,242,255,0.4);
+    margin-bottom: 10px; user-select: none;
+  }
+  #dots { display: flex; gap: 10px; pointer-events: auto; }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.35);
+    cursor: pointer; transition: all 0.25s ease;
+  }
+  .dot:hover { background: rgba(255,255,255,0.4); }
+  .dot.active {
+    background: #59f2ff; border-color: #59f2ff;
+    box-shadow: 0 0 8px #59f2ff, 0 0 16px rgba(89,242,255,0.6);
+  }
+  #label {
+    position: fixed; bottom: 46px; left: 0; right: 0; text-align: center;
+    color: #7fdfff; font-size: 10px; letter-spacing: 2px; opacity: 0.75;
+    pointer-events: none; user-select: none; z-index: 10;
+    transition: opacity 0.6s ease;
+  }
+  #label.hidden { opacity: 0; }
+
+  #fallback {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #ff59d6; font-size: 14px; letter-spacing: 1px; text-align: center; padding: 40px;
+    background: #000;
+  }
+  #ctxlost {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #ff59d6; font-size: 16px; letter-spacing: 2px; text-align: center;
+    background: rgba(0,0,0,0.92); z-index: 999; pointer-events: none;
+  }
+  body.capture #near-phi-badge { display: none !important; }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <div id="title">HYPERSPACE</div>
+  <div id="dots">
+    <div class="dot active" data-i="0" title="TESSERACT"></div>
+    <div class="dot" data-i="1" title="24-CELL"></div>
+    <div class="dot" data-i="2" title="120-CELL"></div>
+    <div class="dot" data-i="3" title="MORPH"></div>
+  </div>
+</div>
+<div id="label">TESSERACT — 8S LOOP</div>
+
+<div id="fallback">WebGL2 is not available on this device.<br>HYPERSPACE needs a WebGL2-capable browser to render.</div>
+<div id="ctxlost">— SIGNAL LOST —<br><span style="font-size:11px;opacity:.7">WebGL context lost. Reload to restore HYPERSPACE.</span></div>
+
+<script>
+(function () {
+  "use strict";
+
+  const isCapture = /[?&]capture=1\b/.test(location.search);
+  if (isCapture) document.body.classList.add('capture');
+
+  const canvas = document.getElementById('gl');
+  const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
+
+  if (!gl) {
+    document.getElementById('fallback').style.display = 'flex';
+    return;
+  }
+
+  // ---------------------------------------------------------------
+  // 4D polytope generation (runs once at load)
+  // ---------------------------------------------------------------
+
+  function dist2(a, b) {
+    let s = 0;
+    for (let i = 0; i < 4; i++) { const d = a[i] - b[i]; s += d * d; }
+    return s;
+  }
+
+  // Build edge list from nearest-neighbor distance (bounded, runs once).
+  function edgesFromNearestNeighbor(verts, tolerance) {
+    const n = verts.length;
+    let minD2 = Infinity;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const d2 = dist2(verts[i], verts[j]);
+        if (d2 > 1e-6 && d2 < minD2) minD2 = d2;
+      }
+    }
+    const edges = [];
+    const thresh = minD2 * (tolerance || 1.001);
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const d2 = dist2(verts[i], verts[j]);
+        if (d2 > 1e-6 && d2 <= thresh) edges.push([i, j]);
+      }
+    }
+    return edges;
+  }
+
+  // --- Tesseract: 16 vertices (+-1)^4, edges = differ in exactly one coord
+  function buildTesseract() {
+    const verts = [];
+    for (let i = 0; i < 16; i++) {
+      const v = [
+        (i & 1) ? 1 : -1,
+        (i & 2) ? 1 : -1,
+        (i & 4) ? 1 : -1,
+        (i & 8) ? 1 : -1
+      ];
+      verts.push(v);
+    }
+    const edges = [];
+    for (let i = 0; i < 16; i++) {
+      for (let j = i + 1; j < 16; j++) {
+        let diff = 0;
+        for (let k = 0; k < 4; k++) if (verts[i][k] !== verts[j][k]) diff++;
+        if (diff === 1) edges.push([i, j]);
+      }
+    }
+    return { verts, edges, scale: 1.0 };
+  }
+
+  // --- 16-cell: cross-polytope, 8 vertices (+-1,0,0,0) perms, edges = all except antipodal
+  function build16Cell() {
+    const verts = [];
+    for (let axis = 0; axis < 4; axis++) {
+      for (const s of [1, -1]) {
+        const v = [0, 0, 0, 0];
+        v[axis] = s;
+        verts.push(v);
+      }
+    }
+    const edges = [];
+    for (let i = 0; i < 8; i++) {
+      for (let j = i + 1; j < 8; j++) {
+        // antipodal pair: exactly opposite vector
+        let antipodal = true;
+        for (let k = 0; k < 4; k++) if (verts[i][k] !== -verts[j][k]) { antipodal = false; break; }
+        if (!antipodal) edges.push([i, j]);
+      }
+    }
+    return { verts, edges, scale: 1.4 };
+  }
+
+  // --- 24-cell: all permutations of (+-1,+-1,0,0)
+  function build24Cell() {
+    const verts = [];
+    const seen = new Set();
+    const base = [1, 1, 0, 0];
+    // all sign combos x all position combos of the two nonzero slots
+    for (let a = 0; a < 4; a++) {
+      for (let b = a + 1; b < 4; b++) {
+        for (const sa of [1, -1]) {
+          for (const sb of [1, -1]) {
+            const v = [0, 0, 0, 0];
+            v[a] = sa; v[b] = sb;
+            const key = v.join(',');
+            if (!seen.has(key)) { seen.add(key); verts.push(v); }
+          }
+        }
+      }
+    }
+    const edges = edgesFromNearestNeighbor(verts, 1.01);
+    return { verts, edges, scale: 1.0 };
+  }
+
+  // --- 120-cell: 600 vertices, golden-ratio construction
+  function build120Cell() {
+    const PHI = (1 + Math.sqrt(5)) / 2;
+    const IPHI = 1 / PHI;
+    const verts = [];
+    const seen = new Set();
+    function push(v) {
+      const key = v.map(x => Math.round(x * 1e6)).join(',');
+      if (!seen.has(key)) { seen.add(key); verts.push(v); }
+    }
+    function permsSigns(base) {
+      // all distinct permutations of base (4 elements), all sign flips on nonzero entries
+      const idx = [0, 1, 2, 3];
+      const perms = [];
+      function permute(arr, k) {
+        if (k === arr.length) { perms.push(arr.slice()); return; }
+        const used = new Set();
+        for (let i = k; i < arr.length; i++) {
+          if (used.has(arr[i])) continue;
+          used.add(arr[i]);
+          [arr[k], arr[i]] = [arr[i], arr[k]];
+          permute(arr, k + 1);
+          [arr[k], arr[i]] = [arr[i], arr[k]];
+        }
+      }
+      permute(base.slice(), 0);
+      const uniq = new Map();
+      for (const p of perms) uniq.set(p.join(','), p);
+      for (const p of uniq.values()) {
+        const nz = [];
+        for (let i = 0; i < 4; i++) if (p[i] !== 0) nz.push(i);
+        const combos = 1 << nz.length;
+        for (let m = 0; m < combos; m++) {
+          const v = p.slice();
+          for (let b = 0; b < nz.length; b++) {
+            if (m & (1 << b)) v[nz[b]] = -v[nz[b]];
+          }
+          push(v);
+        }
+      }
+    }
+
+    // Family 1: (0, 0, +-2, +-2)  [24 permutations family]
+    permsSigns([0, 0, 2, 2]);
+    // Family 2: (+-1, +-1, +-1, +-sqrt5)  -- use phi-based: (+-1,+-1,+-1,+-phi^2) style
+    permsSigns([1, 1, 1, Math.sqrt(5)]);
+    // Family 3: (+-1/phi^2, +-phi, +-phi, +-phi)
+    permsSigns([IPHI * IPHI, PHI, PHI, PHI]);
+    // Family 4: (0, +-1/phi^2, +-1, +-phi^2)
+    permsSigns([0, IPHI * IPHI, 1, PHI * PHI]);
+    // Family 5: (+-1/phi, +-1, +-phi, +-sqrt5)  -> (0,+-1/phi,+-phi,+-sqrt5) even perms only approx;
+    // standard construction uses even permutations for this family, but for a visual
+    // module a small excess of vertices is harmless as edges are derived from geometry.
+    permsSigns([0, IPHI, PHI, Math.sqrt(5)]);
+    // Family 6: (+-1/phi, +-phi, +-2, 0)
+    permsSigns([IPHI, PHI, 2, 0]);
+
+    // Normalize all to the same radius (they should already coincide ~ sqrt(8)),
+    // but guard against float drift by rescaling to unit circumradius.
+    let maxR = 0;
+    for (const v of verts) {
+      const r = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2] + v[3] * v[3]);
+      if (r > maxR) maxR = r;
+    }
+    for (const v of verts) for (let k = 0; k < 4; k++) v[k] /= maxR;
+
+    // Keep only vertices near the dominant shell (the 120-cell is a single shell);
+    // small numerical outliers get dropped rather than polluting edge search.
+    const shellVerts = verts;
+
+    const edges = edgesFromNearestNeighbor(shellVerts, 1.02);
+    return { verts: shellVerts, edges, scale: 1.9 };
+  }
+
+  const POLY_TESS = buildTesseract();
+  const POLY_16C = build16Cell();
+  const POLY_24C = build24Cell();
+  const POLY_120C = build120Cell();
+
+  // Pad every polytope's vertex/edge buffers to a fixed max so MORPH can blend
+  // between them with a single bounded draw call (scar rule #1: nothing unbounded).
+  const MAX_V = 600;
+  const MAX_E = 1200;
+
+  function packPolytope(p) {
+    const verts = new Float32Array(MAX_V * 4);
+    const nV = p.verts.length;
+    for (let i = 0; i < nV; i++) {
+      verts[i * 4 + 0] = p.verts[i][0] / p.scale;
+      verts[i * 4 + 1] = p.verts[i][1] / p.scale;
+      verts[i * 4 + 2] = p.verts[i][2] / p.scale;
+      verts[i * 4 + 3] = p.verts[i][3] / p.scale;
+    }
+    // pad unused slots by repeating last vertex (keeps them degenerate/invisible when unused)
+    for (let i = nV; i < MAX_V; i++) {
+      verts[i * 4 + 0] = verts[(nV - 1) * 4 + 0];
+      verts[i * 4 + 1] = verts[(nV - 1) * 4 + 1];
+      verts[i * 4 + 2] = verts[(nV - 1) * 4 + 2];
+      verts[i * 4 + 3] = verts[(nV - 1) * 4 + 3];
+    }
+    const edges = new Int32Array(MAX_E * 2);
+    const nE = p.edges.length;
+    for (let i = 0; i < nE; i++) {
+      edges[i * 2 + 0] = p.edges[i][0];
+      edges[i * 2 + 1] = p.edges[i][1];
+    }
+    for (let i = nE; i < MAX_E; i++) {
+      edges[i * 2 + 0] = 0; edges[i * 2 + 1] = 0; // degenerate zero-length edge, culled in shader
+    }
+    return { verts, nV, edges, nE };
+  }
+
+  const PACKED = [
+    packPolytope(POLY_TESS),  // 0 tesseract
+    packPolytope(POLY_24C),   // used by preset 1 (24-CELL)
+    packPolytope(POLY_120C),  // used by preset 2 (120-CELL)
+    packPolytope(POLY_16C)    // spare / morph waypoint
+  ];
+
+  // ---------------------------------------------------------------
+  // GL setup
+  // ---------------------------------------------------------------
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error('Shader compile error:', gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  function link(vsSrc, fsSrc) {
+    const v = compile(gl.VERTEX_SHADER, vsSrc);
+    const f = compile(gl.FRAGMENT_SHADER, fsSrc);
+    const p = gl.createProgram();
+    gl.attachShader(p, v); gl.attachShader(p, f);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      console.error('Program link error:', gl.getProgramInfoLog(p));
+    }
+    return p;
+  }
+
+  // ---- Tube (edge) shader: instanced billboarded quad per edge ----
+  const tubeVS = `#version 300 es
+  precision highp float;
+  layout(location=0) in vec2 a_corner;      // quad corner: x in [0,1] along segment, y in [-1,1] across
+  layout(location=1) in vec4 a_p0;          // 4D vertex A
+  layout(location=2) in vec4 a_p1;          // 4D vertex B
+
+  uniform mat4 u_rotXW_YZ_a; // combined 4D rotation packed as two 2D rotations via uniforms below
+  uniform float u_rotXW;     // angle for XW plane
+  uniform float u_rotYZ;     // angle for YZ plane
+  uniform float u_wCam;      // 4D camera distance
+  uniform mat4 u_view;       // 3D view matrix
+  uniform mat4 u_proj;       // 3D projection matrix
+  uniform float u_radius;    // base tube radius in NDC-ish units
+  uniform float u_aspect;
+
+  out float v_w;
+  out float v_depth;
+  out float v_edgeT;
+
+  vec4 rot4(vec4 p) {
+    float cxw = cos(u_rotXW), sxw = sin(u_rotXW);
+    float cyz = cos(u_rotYZ), syz = sin(u_rotYZ);
+    // XW plane rotation
+    float x = p.x * cxw - p.w * sxw;
+    float w = p.x * sxw + p.w * cxw;
+    // YZ plane rotation
+    float y = p.y * cyz - p.z * syz;
+    float z = p.y * syz + p.z * cyz;
+    return vec4(x, y, z, w);
+  }
+
+  vec3 project4to3(vec4 p) {
+    float d = u_wCam / (u_wCam - p.w);
+    return vec3(p.x * d, p.y * d, p.z * d);
+  }
+
+  void main() {
+    vec4 r0 = rot4(a_p0);
+    vec4 r1 = rot4(a_p1);
+    vec3 p0 = project4to3(r0);
+    vec3 p1 = project4to3(r1);
+
+    vec4 c0 = u_view * vec4(p0, 1.0);
+    vec4 c1 = u_view * vec4(p1, 1.0);
+
+    vec4 clip0 = u_proj * c0;
+    vec4 clip1 = u_proj * c1;
+
+    vec2 ndc0 = clip0.xy / max(clip0.w, 1e-4);
+    vec2 ndc1 = clip1.xy / max(clip1.w, 1e-4);
+    ndc0.x *= u_aspect;
+    ndc1.x *= u_aspect;
+
+    vec2 dir = ndc1 - ndc0;
+    float len = max(length(dir), 1e-5);
+    vec2 tang = dir / len;
+    vec2 norm = vec2(-tang.y, tang.x);
+
+    float t = a_corner.x; // 0..1 along
+    vec4 clipMix = mix(clip0, clip1, t);
+    float wMix = mix(r0.w, r1.w, t);
+    float depthMix = mix(c0.z, c1.z, t);
+
+    // depth-based radius falloff: nearer (less negative z, larger c.z toward camera) = thicker
+    float distFalloff = clamp(1.4 / max(-depthMix, 0.3), 0.35, 2.2);
+    float rad = u_radius * distFalloff;
+
+    vec2 ndcMix = mix(ndc0, ndc1, t);
+    vec2 offset = norm * a_corner.y * rad;
+    vec2 finalNdc = ndcMix + offset;
+    finalNdc.x /= u_aspect;
+
+    gl_Position = vec4(finalNdc * clipMix.w, clipMix.z, clipMix.w);
+
+    v_w = wMix;
+    v_depth = -depthMix;
+    v_edgeT = a_corner.y;
+  }
+  `;
+
+  const tubeFS = `#version 300 es
+  precision highp float;
+  in float v_w;
+  in float v_depth;
+  in float v_edgeT;
+  out vec4 outColor;
+
+  uniform float u_fogNear;
+  uniform float u_fogFar;
+  uniform float u_intensity;
+
+  vec3 huesweep(float t) {
+    // cyan -> violet -> magenta -> gold sweep, clamped to house palette family
+    vec3 cyan = vec3(0.349, 0.949, 1.0);
+    vec3 violet = vec3(0.608, 0.42, 1.0);
+    vec3 magenta = vec3(1.0, 0.349, 0.839);
+    vec3 gold = vec3(1.0, 0.812, 0.416);
+    float tt = clamp(t, 0.0, 1.0);
+    if (tt < 0.5) {
+      return mix(cyan, violet, tt * 2.0);
+    } else {
+      return mix(violet, magenta, (tt - 0.5) * 2.0);
+    }
+  }
+
+  void main() {
+    // cross-section falloff for a soft glowing tube, not a hard-edged rectangle
+    float edgeDist = abs(v_edgeT);
+    float core = 1.0 - smoothstep(0.0, 1.0, edgeDist);
+    float glow = pow(core, 1.6);
+
+    float wt = v_w * 0.5 + 0.5; // w in roughly [-1,1] -> [0,1]
+    vec3 col = huesweep(wt);
+
+    float fog = 1.0 - smoothstep(u_fogNear, u_fogFar, v_depth);
+    fog = clamp(fog, 0.05, 1.0);
+
+    float alpha = glow * fog * u_intensity;
+    outColor = vec4(col * alpha, alpha);
+  }
+  `;
+
+  // ---- Vertex bloom sprite shader: instanced point quad per vertex ----
+  const vertVS = `#version 300 es
+  precision highp float;
+  layout(location=0) in vec2 a_corner;
+  layout(location=1) in vec4 a_pos4;
+
+  uniform float u_rotXW;
+  uniform float u_rotYZ;
+  uniform float u_wCam;
+  uniform mat4 u_view;
+  uniform mat4 u_proj;
+  uniform float u_size;
+  uniform float u_aspect;
+
+  out float v_w;
+  out float v_depth;
+  out vec2 v_local;
+
+  vec4 rot4(vec4 p) {
+    float cxw = cos(u_rotXW), sxw = sin(u_rotXW);
+    float cyz = cos(u_rotYZ), syz = sin(u_rotYZ);
+    float x = p.x * cxw - p.w * sxw;
+    float w = p.x * sxw + p.w * cxw;
+    float y = p.y * cyz - p.z * syz;
+    float z = p.y * syz + p.z * cyz;
+    return vec4(x, y, z, w);
+  }
+  vec3 project4to3(vec4 p) {
+    float d = u_wCam / (u_wCam - p.w);
+    return vec3(p.x * d, p.y * d, p.z * d);
+  }
+
+  void main() {
+    vec4 r = rot4(a_pos4);
+    vec3 p3 = project4to3(r);
+    vec4 c = u_view * vec4(p3, 1.0);
+    vec4 clip = u_proj * c;
+
+    float distFalloff = clamp(1.4 / max(-c.z, 0.3), 0.35, 2.2);
+    vec2 ndc = clip.xy / max(clip.w, 1e-4);
+    ndc.x *= u_aspect;
+    ndc += a_corner * u_size * distFalloff;
+    ndc.x /= u_aspect;
+
+    gl_Position = vec4(ndc * clip.w, clip.z, clip.w);
+    v_w = r.w;
+    v_depth = -c.z;
+    v_local = a_corner;
+  }
+  `;
+
+  const vertFS = `#version 300 es
+  precision highp float;
+  in float v_w;
+  in float v_depth;
+  in vec2 v_local;
+  out vec4 outColor;
+
+  uniform float u_fogNear;
+  uniform float u_fogFar;
+  uniform float u_intensity;
+
+  vec3 huesweep(float t) {
+    vec3 cyan = vec3(0.349, 0.949, 1.0);
+    vec3 violet = vec3(0.608, 0.42, 1.0);
+    vec3 magenta = vec3(1.0, 0.349, 0.839);
+    float tt = clamp(t, 0.0, 1.0);
+    if (tt < 0.5) return mix(cyan, violet, tt * 2.0);
+    return mix(violet, magenta, (tt - 0.5) * 2.0);
+  }
+
+  void main() {
+    float r = length(v_local);
+    float core = 1.0 - smoothstep(0.0, 1.0, r);
+    float glow = pow(core, 2.2);
+    float wt = v_w * 0.5 + 0.5;
+    vec3 col = huesweep(wt);
+    float fog = clamp(1.0 - smoothstep(u_fogNear, u_fogFar, v_depth), 0.05, 1.0);
+    float alpha = glow * fog * u_intensity;
+    outColor = vec4(col * alpha, alpha);
+  }
+  `;
+
+  // ---- Fullscreen quad helpers for post-processing ----
+  const fsVS = `#version 300 es
+  precision highp float;
+  layout(location=0) in vec2 a_pos;
+  out vec2 v_uv;
+  void main() { v_uv = a_pos * 0.5 + 0.5; gl_Position = vec4(a_pos, 0.0, 1.0); }
+  `;
+
+  const brightPassFS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+  uniform sampler2D u_tex;
+  uniform float u_threshold;
+  void main() {
+    vec3 c = texture(u_tex, v_uv).rgb;
+    float lum = dot(c, vec3(0.299, 0.587, 0.114));
+    float k = clamp((lum - u_threshold) / max(1e-3, 1.0 - u_threshold), 0.0, 1.0);
+    outColor = vec4(c * k, 1.0);
+  }
+  `;
+
+  const blurFS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+  uniform sampler2D u_tex;
+  uniform vec2 u_dir; // texel-space direction
+  void main() {
+    vec2 texel = u_dir;
+    vec3 sum = texture(u_tex, v_uv).rgb * 0.227027;
+    sum += texture(u_tex, v_uv + texel * 1.384615).rgb * 0.316216;
+    sum += texture(u_tex, v_uv - texel * 1.384615).rgb * 0.316216;
+    sum += texture(u_tex, v_uv + texel * 3.230769).rgb * 0.070270;
+    sum += texture(u_tex, v_uv - texel * 3.230769).rgb * 0.070270;
+    outColor = vec4(sum, 1.0);
+  }
+  `;
+
+  const composeFS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+  uniform sampler2D u_scene;
+  uniform sampler2D u_bloom;
+  uniform sampler2D u_trail;
+  uniform float u_trailAlpha;
+  void main() {
+    vec3 scene = texture(u_scene, v_uv).rgb;
+    vec3 bloom = texture(u_bloom, v_uv).rgb;
+    vec3 trail = texture(u_trail, v_uv).rgb;
+    vec3 col = scene + bloom * 1.15 + trail * u_trailAlpha;
+    // gentle tonemap so hot overlaps don't hard-clip to flat white
+    col = col / (1.0 + col * 0.35);
+    outColor = vec4(col, 1.0);
+  }
+  `;
+
+  const trailMixFS = `#version 300 es
+  precision highp float;
+  in vec2 v_uv;
+  out vec4 outColor;
+  uniform sampler2D u_prevTrail;
+  uniform sampler2D u_newScene;
+  uniform float u_decay;
+  void main() {
+    vec3 prev = texture(u_prevTrail, v_uv).rgb * u_decay;
+    vec3 cur = texture(u_newScene, v_uv).rgb;
+    outColor = vec4(max(prev, cur * 0.6), 1.0);
+  }
+  `;
+
+  const progTube = link(tubeVS, tubeFS);
+  const progVert = link(vertVS, vertFS);
+  const progBright = link(fsVS, brightPassFS);
+  const progBlur = link(fsVS, blurFS);
+  const progCompose = link(fsVS, composeFS);
+  const progTrailMix = link(fsVS, trailMixFS);
+
+  function uniforms(prog, names) {
+    const u = {};
+    names.forEach(n => { u[n] = gl.getUniformLocation(prog, n); });
+    return u;
+  }
+  const uTube = uniforms(progTube, ['u_rotXW','u_rotYZ','u_wCam','u_view','u_proj','u_radius','u_aspect','u_fogNear','u_fogFar','u_intensity']);
+  const uVert = uniforms(progVert, ['u_rotXW','u_rotYZ','u_wCam','u_view','u_proj','u_size','u_aspect','u_fogNear','u_fogFar','u_intensity']);
+  const uBright = uniforms(progBright, ['u_tex','u_threshold']);
+  const uBlur = uniforms(progBlur, ['u_tex','u_dir']);
+  const uCompose = uniforms(progCompose, ['u_scene','u_bloom','u_trail','u_trailAlpha']);
+  const uTrailMix = uniforms(progTrailMix, ['u_prevTrail','u_newScene','u_decay']);
+
+  // ---- Geometry buffers ----
+  // Tube quad: 2 triangles, x=0..1 along segment, y=-1..1 across
+  const tubeCornerData = new Float32Array([
+    0, -1,  1, -1,  1, 1,
+    0, -1,  1, 1,   0, 1
+  ]);
+  const tubeCornerBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, tubeCornerBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, tubeCornerData, gl.STATIC_DRAW);
+
+  const vertCornerData = new Float32Array([
+    -1, -1,  1, -1,  1, 1,
+    -1, -1,  1, 1,  -1, 1
+  ]);
+  const vertCornerBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertCornerBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, vertCornerData, gl.STATIC_DRAW);
+
+  // Per-instance edge endpoint buffers (updated per preset / morph)
+  const p0Buf = gl.createBuffer();
+  const p1Buf = gl.createBuffer();
+  const vpBuf = gl.createBuffer(); // vertex sprite positions
+
+  const edgeVAO = gl.createVertexArray();
+  gl.bindVertexArray(edgeVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, tubeCornerBuf);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, p0Buf);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(1, 1);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, p1Buf);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(2, 1);
+  gl.bindVertexArray(null);
+
+  const vertVAO = gl.createVertexArray();
+  gl.bindVertexArray(vertVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertCornerBuf);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, vpBuf);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(1, 1);
+  gl.bindVertexArray(null);
+
+  const quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+  const quadVAO = gl.createVertexArray();
+  gl.bindVertexArray(quadVAO);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindVertexArray(null);
+
+  // ---------------------------------------------------------------
+  // FBOs (ping-pong for trail; single for scene/bloom chain)
+  // ---------------------------------------------------------------
+  let fboScene, texScene, fboBloomA, texBloomA, fboBloomB, texBloomB;
+  let trailFBOs = [null, null], trailTex = [null, null];
+  let W = 0, H = 0, BW = 0, BH = 0;
+
+  function makeFBOTex(w, h) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    const fbo = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    return { fbo, tex };
+  }
+
+  const floatExt = gl.getExtension('EXT_color_buffer_float');
+  if (!floatExt) console.warn('EXT_color_buffer_float unavailable; falling back may clip highlights');
+
+  function allocFBOs() {
+    W = canvas.width; H = canvas.height;
+    BW = Math.max(1, Math.floor(W / 2)); BH = Math.max(1, Math.floor(H / 2));
+
+    [fboScene, texScene] = allocOne(fboScene, texScene, W, H);
+    [fboBloomA, texBloomA] = allocOne(fboBloomA, texBloomA, BW, BH);
+    [fboBloomB, texBloomB] = allocOne(fboBloomB, texBloomB, BW, BH);
+
+    for (let i = 0; i < 2; i++) {
+      const r = makeFBOTex(W, H);
+      trailFBOs[i] = r.fbo; trailTex[i] = r.tex;
+    }
+    // clear trail buffers to black initially
+    for (let i = 0; i < 2; i++) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, trailFBOs[i]);
+      gl.viewport(0, 0, W, H);
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+  function allocOne(prevFbo, prevTex, w, h) {
+    if (prevFbo) gl.deleteFramebuffer(prevFbo);
+    if (prevTex) gl.deleteTexture(prevTex);
+    const r = makeFBOTex(w, h);
+    return [r.fbo, r.tex];
+  }
+
+  let trailReadIdx = 0; // trailTex[trailReadIdx] = previous frame's accumulated trail
+
+  // ---------------------------------------------------------------
+  // Math helpers (3D)
+  // ---------------------------------------------------------------
+  function mat4Perspective(fovy, aspect, near, far) {
+    const f = 1.0 / Math.tan(fovy / 2);
+    const nf = 1 / (near - far);
+    const m = new Float32Array(16);
+    m[0] = f / aspect; m[5] = f; m[10] = (far + near) * nf; m[11] = -1;
+    m[14] = 2 * far * near * nf;
+    return m;
+  }
+  function mat4LookAt(eye, center, up) {
+    let zx = eye[0]-center[0], zy = eye[1]-center[1], zz = eye[2]-center[2];
+    let zl = Math.hypot(zx,zy,zz) || 1; zx/=zl; zy/=zl; zz/=zl;
+    let xx = up[1]*zz - up[2]*zy, xy = up[2]*zx - up[0]*zz, xz = up[0]*zy - up[1]*zx;
+    let xl = Math.hypot(xx,xy,xz) || 1; xx/=xl; xy/=xl; xz/=xl;
+    const yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
+    const m = new Float32Array(16);
+    m[0]=xx; m[1]=yx; m[2]=zx; m[3]=0;
+    m[4]=xy; m[5]=yy; m[6]=zy; m[7]=0;
+    m[8]=xz; m[9]=yz; m[10]=zz; m[11]=0;
+    m[12]=-(xx*eye[0]+xy*eye[1]+xz*eye[2]);
+    m[13]=-(yx*eye[0]+yy*eye[1]+yz*eye[2]);
+    m[14]=-(zx*eye[0]+zy*eye[1]+zz*eye[2]);
+    m[15]=1;
+    return m;
+  }
+
+  // ---------------------------------------------------------------
+  // Presets / state
+  // ---------------------------------------------------------------
+  const TWO_PI = Math.PI * 2;
+  const LOOP_T = 8.0; // seconds, exact loop for preset 0
+
+  // integer multiples of 2*PI/8 for a perfect 8s loop
+  const RATE_XW_0 = (TWO_PI / LOOP_T) * 1; // 1 full XW turn per loop
+  const RATE_YZ_0 = (TWO_PI / LOOP_T) * 2; // 2 full YZ turns per loop
+
+  const presetsDef = [
+    { name: 'TESSERACT', poly: 0, rateXW: RATE_XW_0, rateYZ: RATE_YZ_0, wCam: 2.6, orbitSpeed: 0.12, fogNear: 3.2, fogFar: 10.5, tubeR: 0.032, vertS: 0.10 },
+    { name: '24-CELL',   poly: 1, rateXW: 0.5, rateYZ: 0.33, wCam: 2.6, orbitSpeed: 0.10, fogNear: 3.2, fogFar: 10.5, tubeR: 0.028, vertS: 0.09 },
+    { name: '120-CELL',  poly: 2, rateXW: 0.11, rateYZ: 0.075, wCam: 3.3, orbitSpeed: 0.06, fogNear: 3.5, fogFar: 11.5, tubeR: 0.013, vertS: 0.045 },
+    { name: 'MORPH',     poly: -1, rateXW: 0.28, rateYZ: 0.19, wCam: 2.8, orbitSpeed: 0.09, fogNear: 3.2, fogFar: 10.8, tubeR: 0.026, vertS: 0.08 }
+  ];
+
+  let currentPreset = 0;
+  let t0 = performance.now();
+  let manualYaw = 0, manualPitch = 0;
+  let wCamOverride = null; // scroll adjust
+  let lastInputTime = performance.now();
+  let uiVisible = true;
+
+  // MORPH cycle order (poly indices into PACKED): tesseract -> 24cell -> 120cell -> 16cell -> back
+  const MORPH_ORDER = [0, 1, 2, 3];
+  const MORPH_PERIOD = 16.0; // seconds per full cycle through 4 forms
+
+  function currentEdgeVertexData(time) {
+    const p = presetsDef[currentPreset];
+    if (p.poly >= 0) {
+      return { data: PACKED[p.poly], blendData: null, blendT: 0 };
+    }
+    // MORPH: blend between consecutive forms in MORPH_ORDER
+    const cyclePos = (time % MORPH_PERIOD) / MORPH_PERIOD * MORPH_ORDER.length;
+    const idxA = Math.floor(cyclePos) % MORPH_ORDER.length;
+    const idxB = (idxA + 1) % MORPH_ORDER.length;
+    const localT = cyclePos - Math.floor(cyclePos);
+    const ease = localT * localT * (3 - 2 * localT);
+    return { data: PACKED[MORPH_ORDER[idxA]], blendData: PACKED[MORPH_ORDER[idxB]], blendT: ease };
+  }
+
+  // Scratch buffers reused every frame (bounded MAX_E / MAX_V, no reallocation growth)
+  const scratchP0 = new Float32Array(MAX_E * 4);
+  const scratchP1 = new Float32Array(MAX_E * 4);
+  const scratchVP = new Float32Array(MAX_V * 4);
+
+  function buildFrameGeometry(time) {
+    const { data, blendData, blendT } = currentEdgeVertexData(time);
+    const nE = blendData ? Math.max(data.nE, blendData.nE) : data.nE;
+    const nV = blendData ? Math.max(data.nV, blendData.nV) : data.nV;
+
+    for (let i = 0; i < nE; i++) {
+      const ea = data.edges[i * 2 + 0], eb = data.edges[i * 2 + 1];
+      let ax = data.verts[ea * 4 + 0], ay = data.verts[ea * 4 + 1], az = data.verts[ea * 4 + 2], aw = data.verts[ea * 4 + 3];
+      let bx = data.verts[eb * 4 + 0], by = data.verts[eb * 4 + 1], bz = data.verts[eb * 4 + 2], bw = data.verts[eb * 4 + 3];
+      if (blendData) {
+        const ea2 = blendData.edges[i * 2 + 0] || 0, eb2 = blendData.edges[i * 2 + 1] || 0;
+        const idxA = i < data.nE ? ea : ea2;
+        const idxB = i < data.nE ? eb : eb2;
+        // blend positions using this edge's own indices where available on both sides;
+        // fallback keeps a stable (non-NaN) degenerate edge.
+        const a2x = blendData.verts[idxA * 4 + 0], a2y = blendData.verts[idxA * 4 + 1], a2z = blendData.verts[idxA * 4 + 2], a2w = blendData.verts[idxA * 4 + 3];
+        const b2x = blendData.verts[idxB * 4 + 0], b2y = blendData.verts[idxB * 4 + 1], b2z = blendData.verts[idxB * 4 + 2], b2w = blendData.verts[idxB * 4 + 3];
+        ax = ax + (a2x - ax) * blendT; ay = ay + (a2y - ay) * blendT; az = az + (a2z - az) * blendT; aw = aw + (a2w - aw) * blendT;
+        bx = bx + (b2x - bx) * blendT; by = by + (b2y - by) * blendT; bz = bz + (b2z - bz) * blendT; bw = bw + (b2w - bw) * blendT;
+      }
+      scratchP0[i*4+0]=ax; scratchP0[i*4+1]=ay; scratchP0[i*4+2]=az; scratchP0[i*4+3]=aw;
+      scratchP1[i*4+0]=bx; scratchP1[i*4+1]=by; scratchP1[i*4+2]=bz; scratchP1[i*4+3]=bw;
+    }
+    for (let i = 0; i < nV; i++) {
+      let x = data.verts[i*4+0], y = data.verts[i*4+1], z = data.verts[i*4+2], w = data.verts[i*4+3];
+      if (blendData) {
+        const x2 = blendData.verts[i*4+0], y2 = blendData.verts[i*4+1], z2 = blendData.verts[i*4+2], w2 = blendData.verts[i*4+3];
+        x = x + (x2-x)*blendT; y = y + (y2-y)*blendT; z = z + (z2-z)*blendT; w = w + (w2-w)*blendT;
+      }
+      scratchVP[i*4+0]=x; scratchVP[i*4+1]=y; scratchVP[i*4+2]=z; scratchVP[i*4+3]=w;
+    }
+    return { nE, nV };
+  }
+
+  // ---------------------------------------------------------------
+  // Resize
+  // ---------------------------------------------------------------
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.floor(window.innerWidth * dpr));
+    const h = Math.max(1, Math.floor(window.innerHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w; canvas.height = h;
+      allocFBOs();
+    }
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------------------------------------------------------------
+  // Input
+  // ---------------------------------------------------------------
+  let dragging = false, lastX = 0, lastY = 0;
+  function markInput() { lastInputTime = performance.now(); showUI(); }
+  canvas.addEventListener('pointerdown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY; markInput();
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    manualYaw += dx * 0.005;
+    manualPitch = Math.max(-1.2, Math.min(1.2, manualPitch + dy * 0.005));
+    markInput();
+  });
+  window.addEventListener('pointerup', () => { dragging = false; });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const cur = wCamOverride === null ? presetsDef[currentPreset].wCam : wCamOverride;
+    wCamOverride = Math.max(1.6, Math.min(6.0, cur + e.deltaY * 0.002));
+    markInput();
+  }, { passive: false });
+  window.addEventListener('pointermove', markInput);
+  window.addEventListener('keydown', markInput);
+
+  function showUI() {
+    if (isCapture) return;
+    uiVisible = true;
+    document.getElementById('ui').classList.remove('hidden');
+    document.getElementById('label').classList.remove('hidden');
+  }
+  function updateUIFade() {
+    if (isCapture) return;
+    const idle = performance.now() - lastInputTime;
+    if (idle > 3000 && uiVisible) {
+      uiVisible = false;
+      document.getElementById('ui').classList.add('hidden');
+      document.getElementById('label').classList.add('hidden');
+    }
+  }
+
+  // ---------------------------------------------------------------
+  // Preset dots / studio API
+  // ---------------------------------------------------------------
+  const dotEls = Array.from(document.querySelectorAll('.dot'));
+  const labelEl = document.getElementById('label');
+
+  function setPreset(i) {
+    i = ((i % presetsDef.length) + presetsDef.length) % presetsDef.length;
+    currentPreset = i;
+    wCamOverride = null;
+    dotEls.forEach((d, idx) => d.classList.toggle('active', idx === i));
+    labelEl.textContent = presetsDef[i].name + (i === 0 ? ' — 8S LOOP' : '');
+  }
+  dotEls.forEach(d => d.addEventListener('click', () => { setPreset(parseInt(d.dataset.i, 10)); markInput(); }));
+
+  window.studio = {
+    presets: presetsDef.map(p => p.name),
+    setPreset,
+    params: {
+      get preset() { return currentPreset; },
+      set preset(v) { setPreset(v); }
+    }
+  };
+
+  // ---------------------------------------------------------------
+  // Context loss handling (scar rule #5)
+  // ---------------------------------------------------------------
+  let contextLost = false;
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    contextLost = true;
+    document.getElementById('ctxlost').style.display = 'flex';
+  }, false);
+  canvas.addEventListener('webglcontextrestored', () => {
+    location.reload();
+  }, false);
+
+  // ---------------------------------------------------------------
+  // Main render
+  // ---------------------------------------------------------------
+  resize();
+
+  if (isCapture) {
+    document.getElementById('ui').style.display = 'none';
+    document.getElementById('label').style.display = 'none';
+    const badge = document.getElementById('near-phi-badge');
+    if (badge) badge.style.display = 'none';
+    setPreset(0); // best-looking preset immediately: TESSERACT exact loop
+  }
+
+  gl.enable(gl.BLEND);
+
+  function drawScene(time) {
+    const p = presetsDef[currentPreset];
+    const { nE, nV } = buildFrameGeometry(time);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, p0Buf);
+    gl.bufferData(gl.ARRAY_BUFFER, scratchP0.subarray(0, nE * 4), gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, p1Buf);
+    gl.bufferData(gl.ARRAY_BUFFER, scratchP1.subarray(0, nE * 4), gl.DYNAMIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vpBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, scratchVP.subarray(0, nV * 4), gl.DYNAMIC_DRAW);
+
+    const rotXW = time * p.rateXW;
+    const rotYZ = time * p.rateYZ;
+    const wCam = wCamOverride === null ? p.wCam : wCamOverride;
+
+    // slow continuous 3D orbit (never stops) + manual drag layered on top
+    const autoYaw = time * p.orbitSpeed;
+    const yaw = autoYaw + manualYaw;
+    const pitch = 0.35 + Math.sin(time * p.orbitSpeed * 0.6) * 0.15 + manualPitch;
+
+    const camDist = 6.4;
+    const eye = [
+      Math.sin(yaw) * Math.cos(pitch) * camDist,
+      Math.sin(pitch) * camDist,
+      Math.cos(yaw) * Math.cos(pitch) * camDist
+    ];
+    const view = mat4LookAt(eye, [0,0,0], [0,1,0]);
+    const aspect = W / H;
+    // fovy tuned so the polytope (world radius up to ~3) fills most of the
+    // vertical extent of a portrait 9:16 crop without clipping at any wCam setting.
+    const proj = mat4Perspective(Math.PI / 2.6, aspect, 0.1, 40);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboScene);
+    gl.viewport(0, 0, W, H);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // additive
+
+    // tubes
+    gl.useProgram(progTube);
+    gl.uniform1f(uTube.u_rotXW, rotXW);
+    gl.uniform1f(uTube.u_rotYZ, rotYZ);
+    gl.uniform1f(uTube.u_wCam, wCam);
+    gl.uniformMatrix4fv(uTube.u_view, false, view);
+    gl.uniformMatrix4fv(uTube.u_proj, false, proj);
+    gl.uniform1f(uTube.u_radius, p.tubeR);
+    gl.uniform1f(uTube.u_aspect, aspect);
+    gl.uniform1f(uTube.u_fogNear, p.fogNear);
+    gl.uniform1f(uTube.u_fogFar, p.fogFar);
+    gl.uniform1f(uTube.u_intensity, 1.6);
+    gl.bindVertexArray(edgeVAO);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, nE);
+
+    // vertex bloom sprites
+    gl.useProgram(progVert);
+    gl.uniform1f(uVert.u_rotXW, rotXW);
+    gl.uniform1f(uVert.u_rotYZ, rotYZ);
+    gl.uniform1f(uVert.u_wCam, wCam);
+    gl.uniformMatrix4fv(uVert.u_view, false, view);
+    gl.uniformMatrix4fv(uVert.u_proj, false, proj);
+    gl.uniform1f(uVert.u_size, p.vertS);
+    gl.uniform1f(uVert.u_aspect, aspect);
+    gl.uniform1f(uVert.u_fogNear, p.fogNear);
+    gl.uniform1f(uVert.u_fogFar, p.fogFar);
+    gl.uniform1f(uVert.u_intensity, 1.4);
+    gl.bindVertexArray(vertVAO);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, nV);
+
+    gl.bindVertexArray(null);
+  }
+
+  function runBloom() {
+    gl.blendFunc(gl.ONE, gl.ZERO); // opaque passes for post-fx
+    gl.disable(gl.BLEND);
+
+    // bright pass: fboScene -> bloomA (half res)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fboBloomA);
+    gl.viewport(0, 0, BW, BH);
+    gl.useProgram(progBright);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texScene);
+    gl.uniform1i(uBright.u_tex, 0);
+    gl.uniform1f(uBright.u_threshold, 0.22);
+    gl.bindVertexArray(quadVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // blur ping-pong: A -> B -> A (a few passes for a soft wide glow)
+    const passes = 4;
+    for (let i = 0; i < passes; i++) {
+      // horizontal: A -> B (never sample a texture bound to the FBO we render to)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboBloomB);
+      gl.viewport(0, 0, BW, BH);
+      gl.useProgram(progBlur);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texBloomA);
+      gl.uniform1i(uBlur.u_tex, 0);
+      gl.uniform2f(uBlur.u_dir, 1.0 / BW, 0);
+      gl.bindVertexArray(quadVAO);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      // vertical: B -> A
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fboBloomA);
+      gl.viewport(0, 0, BW, BH);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texBloomB);
+      gl.uniform1i(uBlur.u_tex, 0);
+      gl.uniform2f(uBlur.u_dir, 0, 1.0 / BH);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    }
+    gl.enable(gl.BLEND);
+  }
+
+  function runTrailAndCompose() {
+    const writeIdx = 1 - trailReadIdx;
+    // mix previous trail (decayed) with current scene into the write buffer.
+    // Never sample trailTex[writeIdx] while bound as the render target — we
+    // only ever read trailTex[trailReadIdx] and texScene, writing to the other slot.
+    gl.disable(gl.BLEND);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, trailFBOs[writeIdx]);
+    gl.viewport(0, 0, W, H);
+    gl.useProgram(progTrailMix);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, trailTex[trailReadIdx]);
+    gl.uniform1i(uTrailMix.u_prevTrail, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, texScene);
+    gl.uniform1i(uTrailMix.u_newScene, 1);
+    gl.uniform1f(uTrailMix.u_decay, 0.80);
+    gl.bindVertexArray(quadVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    trailReadIdx = writeIdx;
+
+    // compose: scene + bloom + trail(prev accumulated, now at trailReadIdx) -> screen
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, W, H);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(progCompose);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texScene);
+    gl.uniform1i(uCompose.u_scene, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, texBloomA);
+    gl.uniform1i(uCompose.u_bloom, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, trailTex[trailReadIdx]);
+    gl.uniform1i(uCompose.u_trail, 2);
+    gl.uniform1f(uCompose.u_trailAlpha, 0.55);
+    gl.bindVertexArray(quadVAO);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.enable(gl.BLEND);
+  }
+
+  function frame() {
+    if (contextLost) return; // scar rule #5: loud message already shown, stop looping quietly
+    requestAnimationFrame(frame);
+    resize();
+    updateUIFade();
+
+    const time = (performance.now() - t0) / 1000;
+    drawScene(time);
+    runBloom();
+    runTrailAndCompose();
+  }
+  requestAnimationFrame(frame);
+
+})();
+</script>
+
+<div id="near-phi-badge" style="position:fixed;bottom:10px;right:10px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(10,10,15,.82);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 12px;font:600 11px/1.2 'Segoe UI',system-ui,sans-serif;backdrop-filter:blur(4px)">
+  <a href="https://near-phi.github.io/" style="color:#c8c8d8;text-decoration:none">Near<span style="color:#4a9eff">Phi</span></a>
+  <span style="color:#3a3a4a">|</span>
+  <a href="https://x.com/Near_Phi" style="color:#6a6a7a;text-decoration:none;font-weight:400">@Near_Phi</a>
+</div>
+
+</body>
+</html>

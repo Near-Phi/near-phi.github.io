@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUASICRYSTAL: Forbidden-Symmetry Interference Field | Near-Phi</title>
+<meta name="description" content="A hypnotic quasiperiodic interference field: seven to eleven rotated plane waves summed into a breathing, glowing lattice with no repeating unit cell. Free, live in your browser.">
+<link rel="canonical" href="https://near-phi.github.io/quasicrystal.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="QUASICRYSTAL: Forbidden-Symmetry Interference Field">
+<meta property="og:description" content="Seven to eleven rotated plane waves summed into a breathing quasiperiodic lattice. Pure hypnosis, live in your browser.">
+<meta property="og:url" content="https://near-phi.github.io/quasicrystal.html">
+<meta property="og:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<meta name="twitter:title" content="QUASICRYSTAL: Forbidden-Symmetry Interference Field">
+<meta name="twitter:description" content="A hypnotic quasiperiodic wave-interference lattice, live in your browser.">
+<meta name="twitter:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "QUASICRYSTAL",
+  "url": "https://near-phi.github.io/quasicrystal.html",
+  "description": "A browser-based quasiperiodic interference-field visualizer: sums of rotated plane waves with forbidden five/seven/nine/eleven-fold symmetry, rendered as glowing contour filaments.",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isPartOf": { "@type": "WebSite", "name": "Near-Phi", "url": "https://near-phi.github.io/" },
+  "publisher": { "@type": "Organization", "name": "Near-Phi", "url": "https://near-phi.github.io/" }
+}
+</script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #000; height: 100%; overflow: hidden; }
+  body { font-family: 'Consolas', 'Monaco', monospace; }
+  canvas { display: block; position: fixed; inset: 0; width: 100vw; height: 100vh; }
+
+  #ui {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 0 0 22px; pointer-events: none;
+    opacity: 1; transition: opacity 1.2s ease;
+  }
+  #ui.faded { opacity: 0; }
+
+  #title {
+    color: #eaf6ff; font-size: 13px; letter-spacing: 6px; font-weight: 600;
+    text-shadow: 0 0 12px rgba(120,200,255,0.55), 0 0 28px rgba(120,200,255,0.25);
+    margin-bottom: 12px; user-select: none;
+  }
+
+  #dots { display: flex; gap: 10px; pointer-events: auto; }
+  .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.35);
+    cursor: pointer; transition: all 0.25s ease;
+  }
+  .dot:hover { background: rgba(255,255,255,0.4); }
+  .dot.active {
+    background: #59f2ff; border-color: #59f2ff;
+    box-shadow: 0 0 10px #59f2ff, 0 0 20px rgba(89,242,255,0.6);
+  }
+
+  #hint {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10;
+    color: rgba(255,255,255,0.35); font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; pointer-events: none;
+    opacity: 1; transition: opacity 1.2s ease;
+  }
+  #hint.faded { opacity: 0; }
+
+  #fallback {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #ff5959; font-size: 14px; text-align: center; padding: 24px; background: #000;
+  }
+  #ctxlost {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #ffcf6a; font-size: 16px; letter-spacing: 2px; text-align: center; background: #000; z-index: 999;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<div id="hint">scroll = symmetry &middot; move = parallax</div>
+<div id="ui">
+  <div id="title">QUASICRYSTAL</div>
+  <div id="dots"></div>
+</div>
+
+<div id="fallback">WebGL2 is required for QUASICRYSTAL and is unavailable on this device.</div>
+<div id="ctxlost">SIGNAL LOST — reconnecting&hellip;</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var params = new URLSearchParams(location.search);
+  var CAPTURE = params.get('capture') === '1';
+
+  var canvas = document.getElementById('gl');
+  var fallbackEl = document.getElementById('fallback');
+  var ctxLostEl = document.getElementById('ctxlost');
+  var uiEl = document.getElementById('ui');
+  var hintEl = document.getElementById('hint');
+  var dotsEl = document.getElementById('dots');
+
+  var gl = canvas.getContext('webgl2', { antialias: true, alpha: false, preserveDrawingBuffer: !!CAPTURE });
+  if (!gl) {
+    fallbackEl.style.display = 'flex';
+    window.studio = { presets: [], setPreset: function(){}, params: {} };
+    throw new Error('WebGL2 unavailable');
+  }
+
+  // ---------------------------------------------------------------
+  // Presets. Each: name, palette (fill rgb, filament rgb), speed, N
+  // ---------------------------------------------------------------
+  var PRESETS = [
+    { name: 'ELECTRIC',       N: 7,  speed: 1.00, hueMode: 0, fill: [0.02,0.05,0.14], glow: [0.55,0.82,1.00], contrast: 1.15, energy: 1.0 },
+    { name: 'GOLD LATTICE',   N: 7,  speed: 0.55, hueMode: 0, fill: [0.10,0.035,0.01], glow: [1.00,0.79,0.35], contrast: 1.05, energy: 0.9 },
+    { name: 'SPECTRUM PULSE', N: 9,  speed: 1.35, hueMode: 1, fill: [0.03,0.02,0.06], glow: [1.00,1.00,1.00], contrast: 1.30, energy: 1.25 },
+    { name: 'INK',            N: 5,  speed: 0.42, hueMode: 2, fill: [0.03,0.03,0.035], glow: [0.92,0.94,0.97], contrast: 1.6, energy: 0.85 }
+  ];
+
+  var LOOP_PERIOD = 12.0; // seconds, seamless
+
+  // ---------------------------------------------------------------
+  // Shaders
+  // ---------------------------------------------------------------
+  var VERT = [
+    '#version 300 es',
+    'precision highp float;',
+    'const vec2 verts[3] = vec2[3](vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0));',
+    'void main(){ gl_Position = vec4(verts[gl_VertexID], 0.0, 1.0); }'
+  ].join('\n');
+
+  var FRAG = [
+    '#version 300 es',
+    'precision highp float;',
+    'out vec4 outColor;',
+    'uniform vec2 uRes;',
+    'uniform float uTime;',
+    'uniform float uLoop;',
+    'uniform int uN;',
+    'uniform float uSpeed;',
+    'uniform int uHueMode;',
+    'uniform vec3 uFill;',
+    'uniform vec3 uGlow;',
+    'uniform float uContrast;',
+    'uniform float uEnergy;',
+    'uniform vec2 uTilt;',
+    'uniform float uDPR;',
+
+    'const float TAU = 6.28318530718;',
+
+    // rotate a 2D vector
+    'vec2 rot(vec2 p, float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c)*p; }',
+
+    // hsv -> rgb
+    'vec3 hsv2rgb(vec3 c){',
+    '  vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);',
+    '  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);',
+    '  return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);',
+    '}',
+
+    // quasicrystal wave sum at point p (already scaled), given N, phase rate, time
+    // returns value roughly in [-N, N]
+    'float qc(vec2 p, int n, float t, float radialPhase){',
+    '  float s = 0.0;',
+    '  for (int k = 0; k < 11; k++){',
+    '    if (k >= n) break;',
+    '    float ang = float(k) * TAU / float(n);',
+    '    vec2 dir = vec2(cos(ang), sin(ang)) + uTilt * 0.35;',
+    '    float w = dot(dir, p);',
+    // integer multiple of 2pi per loop period -> seamless loop
+    '    float rate = float(1 + (k % 3));',
+    '    float phi = TAU * rate * (t / uLoop);',
+    '    s += cos(w * 78.0 + phi + radialPhase);',
+    '  }',
+    '  return s / float(n);',
+    '}',
+
+    'void main(){',
+    '  vec2 uv = (gl_FragCoord.xy - 0.5*uRes) / uRes.y;',
+    '  float r = length(uv);',
+
+    '  float t = uTime * uSpeed;',
+
+    // slow global rotation, never stops
+    '  float globalRot = t * 0.05;',
+    '  vec2 p = rot(uv, globalRot);',
+
+    // radial breathing phase term - field pulses outward from center like a mandala
+    '  float breathe = sin(TAU * (uTime / uLoop)) * 0.5;',
+    '  float radialPhase = r * (2.2 + breathe * 0.9) - uTime * uSpeed * 0.6;',
+
+    // layer 1: primary quasicrystal
+    '  float f1 = qc(p, uN, t, radialPhase);',
+
+    // layer 2: golden-ratio scaled, counter-drifting, opposite rotation -> deep moire
+    '  vec2 p2 = rot(uv, -globalRot * 1.618) * 1.618;',
+    '  float f2 = qc(p2, uN, -t * 0.82, radialPhase * 1.3);',
+
+    '  float field = f1 * 0.68 + f2 * 0.42;',
+
+    // ---- tone map: filled underlayer ----
+    // sharpen the band into distinct fringes instead of a flat gray wash
+    '  float band = 0.5 + 0.5 * sin(field * 3.14159265);',
+    '  band = pow(band, uContrast);',
+    '  vec3 fillCol;',
+    '  if (uHueMode == 1) {',
+    '    float hue = fract(r * 0.9 - uTime * 0.04 + band * 0.15);',
+    '    fillCol = hsv2rgb(vec3(hue, 0.9, 0.12 + band * 0.55));',
+    '  } else if (uHueMode == 2) {',
+    // INK: high-contrast duotone bands, breathing threshold
+    '    float thresh = 0.5 + 0.06 * sin(TAU * uTime / uLoop);',
+    '    float duo = 1.0 - smoothstep(thresh - 0.02, thresh + 0.02, band);',
+    '    fillCol = mix(uFill, uGlow * 0.75, duo);',
+    '  } else {',
+    '    fillCol = mix(uFill * 0.35, uFill + uGlow * 0.55, band * band);',
+    '  }',
+
+    // ---- contour glow: near-zero-crossing ridges of f1+f2, thin glowing filaments ----
+    '  float d1 = fwidth(field) + 1e-3;',
+    '  float ridge = 1.0 - smoothstep(0.0, 1.0, abs(field) / (d1 * 7.0));',
+    '  ridge = pow(clamp(ridge, 0.0, 1.0), 1.3);',
+
+    // secondary finer ridge from layer1 alone for extra lace detail
+    '  float d2 = fwidth(f1) + 1e-3;',
+    '  float ridge2 = 1.0 - smoothstep(0.0, 1.0, abs(f1) / (d2 * 9.0));',
+    '  ridge2 = pow(clamp(ridge2, 0.0, 1.0), 1.6) * 0.6;',
+
+    '  float filament = clamp(ridge + ridge2, 0.0, 1.6) * uEnergy;',
+
+    '  vec3 glowCol = uGlow;',
+    '  if (uHueMode == 1) {',
+    '    float hue2 = fract(r * 0.9 - uTime * 0.04 + 0.5);',
+    '    glowCol = hsv2rgb(vec3(hue2, 0.55, 1.0));',
+    '  }',
+
+    '  vec3 col = fillCol + glowCol * filament;',
+
+    // vignette
+    '  float vig = 1.0 - smoothstep(0.55, 1.25, r);',
+    '  col *= mix(0.55, 1.0, vig);',
+
+    // subtle grain
+    '  vec2 gp = gl_FragCoord.xy;',
+    '  float grain = fract(sin(dot(gp, vec2(12.9898,78.233)) + uTime*37.0) * 43758.5453);',
+    '  col += (grain - 0.5) * 0.018;',
+
+    '  col = clamp(col, 0.0, 1.0);',
+    '  outColor = vec4(col, 1.0);',
+    '}'
+  ].join('\n');
+
+  function compile(type, src){
+    var sh = gl.createShader(type);
+    gl.shaderSource(sh, src);
+    gl.compileShader(sh);
+    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+      var log = gl.getShaderInfoLog(sh);
+      gl.deleteShader(sh);
+      throw new Error('shader compile error: ' + log);
+    }
+    return sh;
+  }
+
+  function link(vsSrc, fsSrc){
+    var vs = compile(gl.VERTEX_SHADER, vsSrc);
+    var fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+    var prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)){
+      var log = gl.getProgramInfoLog(prog);
+      gl.deleteProgram(prog);
+      throw new Error('program link error: ' + log);
+    }
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    return prog;
+  }
+
+  var prog = link(VERT, FRAG);
+  var vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  var U = {
+    uRes: gl.getUniformLocation(prog, 'uRes'),
+    uTime: gl.getUniformLocation(prog, 'uTime'),
+    uLoop: gl.getUniformLocation(prog, 'uLoop'),
+    uN: gl.getUniformLocation(prog, 'uN'),
+    uSpeed: gl.getUniformLocation(prog, 'uSpeed'),
+    uHueMode: gl.getUniformLocation(prog, 'uHueMode'),
+    uFill: gl.getUniformLocation(prog, 'uFill'),
+    uGlow: gl.getUniformLocation(prog, 'uGlow'),
+    uContrast: gl.getUniformLocation(prog, 'uContrast'),
+    uEnergy: gl.getUniformLocation(prog, 'uEnergy'),
+    uTilt: gl.getUniformLocation(prog, 'uTilt'),
+    uDPR: gl.getUniformLocation(prog, 'uDPR')
+  };
+
+  // ---------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------
+  var state = {
+    presetIndex: CAPTURE ? 0 : 0,
+    N: PRESETS[0].N,
+    tilt: [0, 0],
+    tiltTarget: [0, 0],
+    startTime: performance.now(),
+    lastIdle: performance.now(),
+    dpr: Math.min(window.devicePixelRatio || 1, 2)
+  };
+
+  var NLEVELS = [5, 7, 9, 11];
+
+  function buildDots(){
+    dotsEl.innerHTML = '';
+    PRESETS.forEach(function(p, i){
+      var d = document.createElement('div');
+      d.className = 'dot' + (i === state.presetIndex ? ' active' : '');
+      d.title = p.name;
+      d.addEventListener('click', function(){ setPreset(i); wake(); });
+      dotsEl.appendChild(d);
+    });
+  }
+
+  function setPreset(i){
+    i = ((i % PRESETS.length) + PRESETS.length) % PRESETS.length;
+    state.presetIndex = i;
+    state.N = PRESETS[i].N;
+    var dots = dotsEl.children;
+    for (var k = 0; k < dots.length; k++){
+      dots[k].classList.toggle('active', k === i);
+    }
+  }
+
+  function wake(){
+    state.lastIdle = performance.now();
+    uiEl.classList.remove('faded');
+    hintEl.classList.remove('faded');
+  }
+
+  buildDots();
+
+  if (CAPTURE){
+    uiEl.style.display = 'none';
+    hintEl.style.display = 'none';
+  }
+
+  // ---------------------------------------------------------------
+  // Interaction: mouse tilts wave vector field; scroll changes N
+  // ---------------------------------------------------------------
+  window.addEventListener('pointermove', function(e){
+    var nx = (e.clientX / window.innerWidth) * 2 - 1;
+    var ny = (e.clientY / window.innerHeight) * 2 - 1;
+    state.tiltTarget[0] = nx * 0.18;
+    state.tiltTarget[1] = -ny * 0.18;
+    wake();
+  }, { passive: true });
+
+  window.addEventListener('wheel', function(e){
+    var idx = NLEVELS.indexOf(state.N);
+    if (idx === -1) idx = 1;
+    idx += (e.deltaY > 0 ? 1 : -1);
+    idx = Math.max(0, Math.min(NLEVELS.length - 1, idx));
+    state.N = NLEVELS[idx];
+    wake();
+    e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener('pointerdown', wake, { passive: true });
+  window.addEventListener('keydown', function(e){
+    if (e.key >= '1' && e.key <= '9'){
+      var n = parseInt(e.key, 10) - 1;
+      if (n < PRESETS.length) setPreset(n);
+    }
+    wake();
+  });
+
+  // ---------------------------------------------------------------
+  // Resize
+  // ---------------------------------------------------------------
+  function resize(){
+    state.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.max(1, Math.floor(window.innerWidth * state.dpr));
+    var h = Math.max(1, Math.floor(window.innerHeight * state.dpr));
+    if (canvas.width !== w || canvas.height !== h){
+      canvas.width = w;
+      canvas.height = h;
+    }
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------------------------------------------------------------
+  // Context loss handling
+  // ---------------------------------------------------------------
+  canvas.addEventListener('webglcontextlost', function(e){
+    e.preventDefault();
+    ctxLostEl.style.display = 'flex';
+  }, false);
+  canvas.addEventListener('webglcontextrestored', function(){
+    ctxLostEl.style.display = 'none';
+    location.reload();
+  }, false);
+
+  // ---------------------------------------------------------------
+  // Render loop
+  // ---------------------------------------------------------------
+  var frameCount = 0;
+  function frame(nowMs){
+    resize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+
+    var t = (nowMs - state.startTime) / 1000.0;
+    var preset = PRESETS[state.presetIndex];
+
+    // smooth tilt toward target (parallax feel, never a hard cut)
+    state.tilt[0] += (state.tiltTarget[0] - state.tilt[0]) * 0.06;
+    state.tilt[1] += (state.tiltTarget[1] - state.tilt[1]) * 0.06;
+
+    gl.useProgram(prog);
+    gl.uniform2f(U.uRes, canvas.width, canvas.height);
+    gl.uniform1f(U.uTime, t);
+    gl.uniform1f(U.uLoop, LOOP_PERIOD);
+    gl.uniform1i(U.uN, state.N);
+    gl.uniform1f(U.uSpeed, preset.speed);
+    gl.uniform1i(U.uHueMode, preset.hueMode);
+    gl.uniform3f(U.uFill, preset.fill[0], preset.fill[1], preset.fill[2]);
+    gl.uniform3f(U.uGlow, preset.glow[0], preset.glow[1], preset.glow[2]);
+    gl.uniform1f(U.uContrast, preset.contrast);
+    gl.uniform1f(U.uEnergy, preset.energy);
+    gl.uniform2f(U.uTilt, state.tilt[0], state.tilt[1]);
+    gl.uniform1f(U.uDPR, state.dpr);
+
+    gl.bindVertexArray(vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    // idle fade for UI chrome (3s)
+    if (!CAPTURE){
+      var idleMs = nowMs - state.lastIdle;
+      if (idleMs > 3000){
+        uiEl.classList.add('faded');
+        hintEl.classList.add('faded');
+      }
+    }
+
+    frameCount++;
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------------------------------------------------------------
+  // window.studio interface
+  // ---------------------------------------------------------------
+  window.studio = {
+    presets: PRESETS.map(function(p){ return p.name; }),
+    setPreset: function(i){ setPreset(i); },
+    params: {
+      get N(){ return state.N; },
+      set N(v){ if (NLEVELS.indexOf(v) !== -1) state.N = v; },
+      loopPeriod: LOOP_PERIOD
+    }
+  };
+
+  if (CAPTURE){
+    setPreset(0);
+  }
+})();
+</script>
+</body>
+</html>

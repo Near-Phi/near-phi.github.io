@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XENOGLOSSIA — Living Script | Near-Phi</title>
+<meta name="description" content="A procedural alien/sacred script that writes itself, glowing ink stroke by stroke across an infinite stone manuscript. Free and interactive.">
+<link rel="canonical" href="https://near-phi.github.io/glyphs.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="XENOGLOSSIA — Living Script">
+<meta property="og:description" content="Procedural alien script generator: glyphs write themselves in glowing ink, then ember-fade as the manuscript scrolls forever.">
+<meta property="og:url" content="https://near-phi.github.io/glyphs.html">
+<meta property="og:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<meta name="twitter:title" content="XENOGLOSSIA — Living Script">
+<meta name="twitter:description" content="A language that has never existed, writing itself forever.">
+<meta name="twitter:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "XENOGLOSSIA — Living Script",
+  "url": "https://near-phi.github.io/glyphs.html",
+  "description": "A procedural alien/sacred script generator that writes itself stroke by stroke in glowing ink across an infinite stone manuscript.",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isPartOf": { "@type": "WebSite", "name": "Near-Phi", "url": "https://near-phi.github.io/" },
+  "publisher": { "@type": "Organization", "name": "Near-Phi", "url": "https://near-phi.github.io/" }
+}
+</script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#000;overflow:hidden}
+  body{font-family:Consolas,monospace}
+  canvas{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;inset:0;z-index:5;pointer-events:none;transition:opacity .6s ease}
+  #ui.hide{opacity:0}
+  .title{position:absolute;top:22px;left:26px;color:#ffcf6a;font-size:13px;letter-spacing:.34em;
+    font-weight:600;text-shadow:0 0 12px rgba(255,207,106,.7),0 0 26px rgba(255,207,106,.35)}
+  .sub{position:absolute;top:44px;left:26px;color:#59f2ff;font-size:9.5px;letter-spacing:.18em;opacity:.55}
+  .dots{position:absolute;bottom:24px;left:26px;display:flex;gap:10px;pointer-events:auto}
+  .dot{width:9px;height:9px;border-radius:50%;border:1px solid rgba(255,207,106,.45);
+    background:rgba(255,207,106,.08);cursor:pointer;transition:.2s}
+  .dot:hover{background:rgba(255,207,106,.3)}
+  .dot.on{background:#ffcf6a;box-shadow:0 0 10px rgba(255,207,106,.9)}
+  .reseed{position:absolute;bottom:20px;right:26px;pointer-events:auto;cursor:pointer;
+    width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,207,106,.4);
+    background:rgba(255,207,106,.06);color:#ffcf6a;font-size:16px;
+    display:flex;align-items:center;justify-content:center;transition:.2s}
+  .reseed:hover{background:rgba(255,207,106,.22);box-shadow:0 0 14px rgba(255,207,106,.5)}
+  .seedtag{position:absolute;bottom:24px;right:70px;color:#ffcf6a;font-size:9.5px;letter-spacing:.12em;opacity:.5;
+    display:flex;align-items:center}
+  #badge{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:99999;display:flex;
+    align-items:center;gap:8px;background:rgba(10,10,15,.78);border:1px solid rgba(255,255,255,.14);
+    border-radius:20px;padding:5px 12px;font:600 10.5px/1.2 'Segoe UI',system-ui,sans-serif;
+    backdrop-filter:blur(4px);pointer-events:auto;transition:opacity .6s ease}
+  #badge.hide{opacity:0}
+  #badge a{color:#c8c8d8;text-decoration:none}
+  #badge .np{color:#59f2ff}
+  #badge .x{color:#6a6a7a;font-weight:400}
+  #fallback{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+    color:#ffcf6a;font:14px monospace;text-align:center;padding:40px;z-index:10}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="title">XENOGLOSSIA</div>
+  <div class="sub" id="langtag">TEMPLE GOLD · SEED 0000</div>
+  <div class="dots" id="dots"></div>
+  <div class="seedtag" id="seedtag"></div>
+  <div class="reseed" id="reseed" title="new language">&#x2685;</div>
+</div>
+<div id="badge">
+  <a href="https://near-phi.github.io/" class="np">Near<span style="color:#4a9eff">Phi</span></a>
+  <span class="x">|</span>
+  <a href="https://x.com/Near_Phi" class="x">@Near_Phi</a>
+</div>
+<div id="fallback">Canvas 2D is unavailable in this browser.</div>
+
+<script>
+(function(){
+"use strict";
+
+const params = new URLSearchParams(location.search);
+const CAPTURE = params.get('capture') === '1';
+
+// ---------- PRNG ----------
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashSeed(s){
+  s = Math.imul(s ^ 0x9e3779b9, 0x85ebca6b);
+  s ^= s >>> 13; s = Math.imul(s, 0xc2b2ae35); s ^= s >>> 16;
+  return s >>> 0;
+}
+
+// ---------- canvas / dpr ----------
+const cv = document.getElementById('c');
+let ctx;
+try { ctx = cv.getContext('2d', { alpha:false }); } catch(e){}
+if(!ctx){ document.getElementById('fallback').style.display='flex'; return; }
+
+let DPR = Math.min(devicePixelRatio||1, 2);
+let W=0,H=0;
+function resize(){
+  W = innerWidth; H = innerHeight;
+  cv.width = Math.floor(W*DPR); cv.height = Math.floor(H*DPR);
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+}
+addEventListener('resize', resize);
+
+// ---------- mystic wordlist ----------
+const WORDLIST = ["EYE","GATE","RIVER","SEED","RETURN","HOLLOW","CROWN","BELOW",
+  "ASH","THRESHOLD","VEIL","ROOT","EMBER","SILENCE","BONE","TIDE","ORIGIN","SHADE",
+  "SPIRAL","WITNESS","THORN","ECHO","MARROW","DUST","LATTICE","HUSK","VOW","ABYSS"];
+
+// ---------- presets ----------
+// strokeSet: vocabulary of stroke "moves" allowed, each biased by preset
+// angleQuant: how many discrete stroke angles the language uses (coherence)
+// weight: line width base; glowColor / accentColor; ligature: chance of connecting tick
+const PRESETS = [
+  { name:"TEMPLE GOLD",  short:"TEMPLE",
+    ink:"#ffcf6a", accent:"#59f2ff", angleSteps:8, curviness:0.35,
+    strokesMin:4, strokesMax:7, dotChance:0.30, arcChance:0.35, tickChance:0.30,
+    diacriticChance:0.55, weight:1.0, density:"dense", jitter:0.05 },
+  { name:"CIPHER",       short:"CIPHER",
+    ink:"#59f2ff", accent:"#ffcf6a", angleSteps:4, curviness:0.06,
+    strokesMin:3, strokesMax:6, dotChance:0.18, arcChance:0.08, tickChance:0.45,
+    diacriticChance:0.28, weight:0.85, density:"terse", jitter:0.02 },
+  { name:"CURSIVE",      short:"CURSIVE",
+    ink:"#c79bff", accent:"#59f2ff", angleSteps:12, curviness:0.75,
+    strokesMin:3, strokesMax:5, dotChance:0.12, arcChance:0.55, tickChance:0.15,
+    diacriticChance:0.40, weight:1.15, density:"flowing", jitter:0.09 }
+];
+
+// ---------- language state ----------
+let preset = PRESETS[0];
+let presetIdx = 0;
+let seed = (Date.now() ^ (Math.random()*1e9)) >>> 0;
+let rng = mulberry32(seed);
+let angleVocab = []; // shared stroke-angle vocabulary for this "language"
+
+function buildLanguage(){
+  rng = mulberry32(seed ^ (presetIdx*0x1000193));
+  angleVocab = [];
+  const n = preset.angleSteps;
+  const offset = rng()*Math.PI*2;
+  for(let i=0;i<n;i++){
+    angleVocab.push(offset + (i/n)*Math.PI*2 + (rng()-0.5)*0.15);
+  }
+}
+
+// ---------- lattice anchor points for a glyph cell ----------
+// 4x5 grid normalized 0..1 plus 4 circular anchors around center for arcs/dots
+function latticePoints(){
+  const pts = [];
+  for(let gx=0; gx<4; gx++){
+    for(let gy=0; gy<5; gy++){
+      pts.push({ x: gx/3, y: gy/4, ring:false });
+    }
+  }
+  const cx=0.5, cy=0.5, r=0.34;
+  for(let i=0;i<8;i++){
+    const a = i/8*Math.PI*2;
+    pts.push({ x: cx+Math.cos(a)*r, y: cy+Math.sin(a)*r, ring:true });
+  }
+  return pts;
+}
+const LATTICE = latticePoints();
+
+function nearestAngleVocab(rawAngle){
+  let best = angleVocab[0], bd = 1e9;
+  for(const a of angleVocab){
+    let d = Math.abs(((rawAngle-a+Math.PI*3)%(Math.PI*2)) - Math.PI);
+    if(d<bd){bd=d;best=a;}
+  }
+  return best;
+}
+
+// ---------- procedural glyph generation ----------
+// A glyph = array of strokes. Each stroke: {type:'quad'|'cubic'|'arc'|'dot'|'tick', pts:[...], diacritic:bool}
+// Real scripts have anatomy: every glyph = one SPINE (vertical, diagonal, or
+// ring) + 1-3 attachments that physically CONNECT to it (bowls, crossbars,
+// hooks), + optional diacritic above/below the cell. Floating strokes are what
+// made v1 read as scribbles instead of typography.
+function genGlyph(glyphSeed){
+  const r = mulberry32(glyphSeed);
+  const strokes = [];
+  let spinePt; // t in [0,1] -> point along the spine
+
+  const spineKind = r();
+  if(spineKind < 0.58){
+    // vertical spine with language-curviness bow
+    const x0 = 0.30 + r()*0.14;
+    const bow = (r()-0.5)*preset.curviness*0.35;
+    const top = {x:x0, y:0.04+r()*0.05};
+    const mid = {x:x0+bow, y:0.5};
+    const bot = {x:x0+(r()-0.5)*0.05, y:0.92+r()*0.05};
+    strokes.push({ type:'quad', pts:[top, mid, bot], diacritic:false });
+    spinePt = t => { const mt=1-t; return {
+      x: mt*mt*top.x + 2*mt*t*mid.x + t*t*bot.x,
+      y: mt*mt*top.y + 2*mt*t*mid.y + t*t*bot.y }; };
+  } else if(spineKind < 0.82){
+    // diagonal spine, angle snapped to the language vocabulary
+    const ang = nearestAngleVocab(Math.PI/2 + (r()-0.5)*1.1);
+    const L = 0.42;
+    const p0 = {x:0.5-Math.cos(ang)*L, y:0.5-Math.sin(ang)*L};
+    const p1 = {x:0.5+Math.cos(ang)*L, y:0.5+Math.sin(ang)*L};
+    strokes.push({ type:'tick', pts:[p0,p1], diacritic:false });
+    spinePt = t => ({ x:p0.x+(p1.x-p0.x)*t, y:p0.y+(p1.y-p0.y)*t });
+  } else {
+    // ring spine (the language's O-class)
+    const a0 = nearestAngleVocab(r()*Math.PI*2);
+    const span = Math.PI*(1.3 + r()*0.7);
+    const rad = 0.28 + r()*0.07;
+    strokes.push({ type:'arc', center:{x:0.5,y:0.5}, a0, a1:a0+span, r:rad, diacritic:false });
+    spinePt = t => ({ x:0.5+Math.cos(a0+span*t)*rad, y:0.5+Math.sin(a0+span*t)*rad });
+  }
+
+  const nAtt = 1 + Math.floor(r()*3); // 1-3 attachments, all anchored ON the spine
+  const slots = [0.12, 0.5, 0.88];    // head / waist / foot, like real letterforms
+  for(let i=0;i<nAtt;i++){
+    const t = Math.max(0, Math.min(1, slots[Math.floor(r()*3)] + (r()-0.5)*0.08));
+    const a = spinePt(t);
+    const roll = r();
+    if(roll < preset.arcChance + 0.15){
+      // bowl: arc hugging the spine point
+      const rad = 0.10 + r()*0.09;
+      const side = r()<0.75 ? 1 : -1; // language handedness bias
+      strokes.push({ type:'arc', center:{x:a.x+rad*0.9*side, y:a.y},
+                     a0: Math.PI*0.5, a1: Math.PI*1.5 + preset.curviness*0.8, r:rad, diacritic:false });
+    } else if(roll < preset.arcChance + 0.15 + preset.tickChance + 0.12){
+      // crossbar / branch from the spine, vocab-snapped
+      const ang = nearestAngleVocab(r()<0.6 ? 0 : r()*Math.PI*2);
+      const len = 0.14 + r()*0.15;
+      strokes.push({ type:'tick', pts:[a,
+        {x:a.x+Math.cos(ang)*len, y:a.y+Math.sin(ang)*len}], diacritic:false });
+    } else {
+      // hook curving away from the spine
+      const ang = nearestAngleVocab(r()*Math.PI*2);
+      const len = 0.15 + r()*0.12;
+      const p1 = {x:a.x+Math.cos(ang)*len, y:a.y+Math.sin(ang)*len};
+      const perp = ang + Math.PI/2;
+      const c1 = {x:(a.x+p1.x)/2 + Math.cos(perp)*preset.curviness*0.22,
+                  y:(a.y+p1.y)/2 + Math.sin(perp)*preset.curviness*0.22};
+      strokes.push({ type:'quad', pts:[a,c1,p1], diacritic:false });
+    }
+  }
+
+  if(r() < preset.diacriticChance){
+    const above = r() < 0.6;
+    strokes.push({ type:'dot', pts:[{x:0.35+r()*0.3, y: above ? -0.10 : 1.10}], diacritic:true });
+  }
+
+  return { strokes, seed: glyphSeed };
+}
+function clamp01(v){ return Math.max(0,Math.min(1,v)); }
+function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.sqrt(dx*dx+dy*dy); }
+
+// ---------- flatten a stroke into polyline points (for length calc + dash reveal) ----------
+function flattenStroke(st, cellSize, ox, oy){
+  const pts = [];
+  const toPix = (p)=>({ x: ox + p.x*cellSize, y: oy + p.y*cellSize*1.15 });
+  if(st.type==='dot'){
+    return { poly:[toPix(st.pts[0])], closed:false, isDot:true };
+  }
+  if(st.type==='tick'){
+    pts.push(toPix(st.pts[0]), toPix(st.pts[1]));
+    return { poly:pts, closed:false };
+  }
+  if(st.type==='quad'){
+    const [p0,c1,p1] = st.pts.map(toPix);
+    const N=14;
+    for(let i=0;i<=N;i++){
+      const t=i/N, mt=1-t;
+      pts.push({ x: mt*mt*p0.x + 2*mt*t*c1.x + t*t*p1.x,
+                 y: mt*mt*p0.y + 2*mt*t*c1.y + t*t*p1.y });
+    }
+    return { poly:pts, closed:false };
+  }
+  if(st.type==='cubic'){
+    const [p0,c1,c2,p1] = st.pts.map(toPix);
+    const N=16;
+    for(let i=0;i<=N;i++){
+      const t=i/N, mt=1-t;
+      pts.push({
+        x: mt*mt*mt*p0.x + 3*mt*mt*t*c1.x + 3*mt*t*t*c2.x + t*t*t*p1.x,
+        y: mt*mt*mt*p0.y + 3*mt*mt*t*c1.y + 3*mt*t*t*c2.y + t*t*t*p1.y
+      });
+    }
+    return { poly:pts, closed:false };
+  }
+  if(st.type==='arc'){
+    const cx = ox + st.center.x*cellSize, cy = oy + st.center.y*cellSize*1.15;
+    const rad = st.r*cellSize;
+    const N=18;
+    for(let i=0;i<=N;i++){
+      const t = st.a0 + (st.a1-st.a0)*(i/N);
+      pts.push({ x: cx+Math.cos(t)*rad, y: cy+Math.sin(t)*rad });
+    }
+    return { poly:pts, closed:false };
+  }
+  return { poly:pts, closed:false };
+}
+function polyLength(poly){
+  let L=0;
+  for(let i=1;i<poly.length;i++){ L += dist(poly[i-1],poly[i]); }
+  return L;
+}
+
+// ---------- glyph cache (per language) ----------
+let glyphCache = new Map();
+function getGlyph(id){
+  let g = glyphCache.get(id);
+  if(!g){ g = genGlyph(hashSeed(seed ^ (presetIdx*7919) ^ (id*2654435761))); glyphCache.set(id, g); }
+  return g;
+}
+
+// ---------- manuscript: lines of glyphs scrolling upward ----------
+let CELL = 72; // base glyph cell size in css px, scaled by preset density + viewport
+let lines = []; // {y, glyphs:[{id, revealed(0..1)}], writeIndex, done, fadeStart, translate:{idx,word,t}}
+let nextGlyphCounter = 1000;
+let lineIdCounter = 0;
+
+function computeCell(){
+  // scale glyph size to viewport so the manuscript fills the frame at any resolution
+  CELL = Math.max(64, Math.min(126, W*0.10));
+}
+
+function glyphsPerLine(){
+  const w = Math.min(W*0.86, 980);
+  const cs = CELL * (preset.density==='dense'?1:preset.density==='terse'?0.92:1.05);
+  return Math.max(4, Math.floor(w/(cs*1.22)));
+}
+
+// A language is a small ALPHABET reused with a Zipf frequency curve, grouped
+// into 2-5 glyph words. Symbol reuse is what makes it read as writing; the
+// v1 every-glyph-unique stream read as noise.
+const ALPHABET_SIZE = 26;
+function zipfPickGlyph(){
+  // weight rank k by 1/(k+2); walk the cumulative sum
+  let total = 0;
+  for(let k=0;k<ALPHABET_SIZE;k++) total += 1/(k+2);
+  let x = rng()*total;
+  for(let k=0;k<ALPHABET_SIZE;k++){
+    x -= 1/(k+2);
+    if(x<=0) return k;
+  }
+  return ALPHABET_SIZE-1;
+}
+function newLine(y){
+  const n = glyphsPerLine() + Math.floor(rng()*3)-1;
+  const entries = [];
+  let wordLeft = 2 + Math.floor(rng()*4);
+  for(let i=0;i<n;i++){
+    if(wordLeft===0){
+      wordLeft = 2 + Math.floor(rng()*4);
+      entries.push({ id: zipfPickGlyph() + presetIdx*100000, reveal:0, sparked:false, gap:true });
+    } else {
+      entries.push({ id: zipfPickGlyph() + presetIdx*100000, reveal:0, sparked:false, gap:false });
+    }
+    wordLeft--;
+  }
+  return {
+    lid: lineIdCounter++,
+    y, glyphs: entries,
+    writeIndex: 0, strokeIndex: 0, strokeT: 0,
+    state:'writing', // writing -> shimmer -> fading
+    shimmerT:0, fadeT:0,
+    translate: null
+  };
+}
+
+let scrollY = 0;
+let lineSpacing = 0;
+function layoutMetrics(){
+  lineSpacing = CELL * 1.5;
+}
+
+// ---------- particle sparks (stroke-end burst + pen tip) ----------
+let sparks = [];
+function spawnBurst(x,y,color,n){
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2;
+    const sp = 0.6+Math.random()*2.2;
+    sparks.push({ x,y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, color });
+  }
+}
+function updateSparks(dt){
+  for(let i=sparks.length-1;i>=0;i--){
+    const s=sparks[i];
+    s.x += s.vx*dt*60; s.y += s.vy*dt*60;
+    s.vx *= 0.92; s.vy *= 0.92;
+    s.life -= dt*1.6;
+    if(s.life<=0) sparks.splice(i,1);
+  }
+}
+function drawSparks(){
+  for(const s of sparks){
+    ctx.globalCompositeOperation='lighter';
+    ctx.fillStyle = s.color;
+    ctx.globalAlpha = Math.max(0,s.life);
+    ctx.beginPath(); ctx.arc(s.x,s.y, 1.6*DPR*s.life+0.4, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+}
+
+// ---------- translation flicker ----------
+let lastTranslateAt = 0;
+function maybeTranslate(now){
+  if(now - lastTranslateAt < 7800) return;
+  // find a fully-written, not-yet-faded line with glyphs
+  const candidates = lines.filter(l=> l.state!=='fading' && l.glyphs.length>2 && l.writeIndex >= Math.min(3,l.glyphs.length));
+  if(!candidates.length) return;
+  const line = candidates[Math.floor(rng()*candidates.length)];
+  const idx = Math.floor(rng()*Math.min(line.writeIndex, line.glyphs.length));
+  line.translate = { idx, word: WORDLIST[Math.floor(rng()*WORDLIST.length)], t: now, dur: 1600 };
+  lastTranslateAt = now;
+}
+
+// ---------- drawing a single stroke with glow, dash reveal, pen-tip ----------
+function drawStroke(flat, revealFrac, color, weightPx, isActive){
+  const poly = flat.poly;
+  if(flat.isDot){
+    const p = poly[0];
+    if(revealFrac<=0) return null;
+    const rr = weightPx*1.5;
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    for(const pass of [ {blur:18,a:0.35}, {blur:8,a:0.55}, {blur:2,a:0.9} ]){
+      ctx.shadowColor = color; ctx.shadowBlur = pass.blur*DPR;
+      ctx.fillStyle = color; ctx.globalAlpha = pass.a * Math.min(1,revealFrac*3);
+      ctx.beginPath(); ctx.arc(p.x,p.y, rr, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+    return p;
+  }
+  if(poly.length<2) return null;
+  const total = polyLength(poly);
+  const showLen = total * Math.max(0, Math.min(1,revealFrac));
+  if(showLen<=0.001) return null;
+  // build the visible sub-polyline
+  let acc=0, cut=poly.length;
+  const sub=[poly[0]];
+  for(let i=1;i<poly.length;i++){
+    const seg = dist(poly[i-1],poly[i]);
+    if(acc+seg >= showLen){
+      const t = (showLen-acc)/seg;
+      sub.push({ x: poly[i-1].x+(poly[i].x-poly[i-1].x)*t, y: poly[i-1].y+(poly[i].y-poly[i-1].y)*t });
+      cut=i; break;
+    }
+    acc+=seg; sub.push(poly[i]);
+  }
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  // Halos kept tight: the v1 blur-40 pass merged neighboring glyphs into a
+  // uniform glow slab and showed the baked strip's clip edges as bands.
+  const passes = [
+    { blur:22, a:0.30, w:weightPx*2.8 },
+    { blur:10, a:0.65, w:weightPx*1.8 },
+    { blur:3,  a:1.0,  w:weightPx*1.2 }
+  ];
+  for(const pass of passes){
+    ctx.shadowColor = color; ctx.shadowBlur = pass.blur*DPR;
+    ctx.strokeStyle = color; ctx.globalAlpha = pass.a;
+    ctx.lineWidth = pass.w;
+    ctx.beginPath();
+    ctx.moveTo(sub[0].x, sub[0].y);
+    for(let i=1;i<sub.length;i++) ctx.lineTo(sub[i].x, sub[i].y);
+    ctx.stroke();
+  }
+  ctx.restore();
+  return sub[sub.length-1];
+}
+
+// ---------- render a glyph cell ----------
+function drawGlyph(g, ox, oy, cellSize, glyphState, color, accent, now){
+  const strokes = g.strokes;
+  let tip = null;
+  for(let si=0; si<strokes.length; si++){
+    const st = strokes[si];
+    const flat = flattenStroke(st, cellSize, ox, oy);
+    let reveal;
+    if(si < glyphState.strokeCursor) reveal = 1;
+    else if(si === glyphState.strokeCursor) reveal = glyphState.strokeT;
+    else reveal = 0;
+    if(reveal<=0) continue;
+    const col = st.diacritic ? accent : color;
+    const w = (st.diacritic? 1.6 : (st.type==='dot'?2.1:2.3)) * DPR * preset.weight;
+    const endPt = drawStroke(flat, reveal, col, w, si===glyphState.strokeCursor);
+    if(si===glyphState.strokeCursor && reveal>0 && reveal<1 && endPt) tip = { p:endPt, color:col };
+  }
+  return tip;
+}
+
+// ---------- pen tip glow ----------
+function drawPenTip(p, color){
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  const pulse = 0.7+0.3*Math.sin(performance.now()*0.02);
+  for(const pass of [ {blur:26,a:0.28,r:7}, {blur:12,a:0.5,r:4}, {blur:3,a:1,r:2.2} ]){
+    ctx.shadowColor=color; ctx.shadowBlur=pass.blur*DPR;
+    ctx.fillStyle='#ffffff'; ctx.globalAlpha=pass.a*pulse;
+    ctx.beginPath(); ctx.arc(p.x,p.y,pass.r*DPR,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------- per-glyph write state, stored alongside line.glyphs entries ----------
+function ensureGlyphState(entry){
+  if(!entry.gs) entry.gs = { strokeCursor:0, strokeT:0, doneStrokes:0 };
+  return entry.gs;
+}
+
+// ---------- main update ----------
+let lastT = performance.now();
+const STROKE_DURATION = 0.16; // seconds per stroke reveal (varies slightly per stroke count)
+
+function initManuscript(){
+  lines = [];
+  lineIdCounter = 0;
+  computeCell();
+  layoutMetrics();
+  glyphCache = new Map();
+  scrollY = 0;
+  // pre-fill the ENTIRE stele top-to-bottom with completed lines so the manuscript
+  // never looks empty, then one actively-writing line just below the last settled row
+  // (new scripture appears at the bottom and pushes the whole page upward as it grows).
+  // fill everything ABOVE the writing row (which the camera pins at 72% height)
+  const rowsAbove = Math.ceil((H*0.72)/lineSpacing) + 1;
+  const startY = H*0.72 - rowsAbove*lineSpacing;
+  for(let i=0; i<rowsAbove; i++){
+    const l = newLine(startY + i*lineSpacing);
+    l.state = 'settled';
+    l.writeIndex = l.glyphs.length;
+    l.glyphs.forEach(g=>{ g.reveal=1; g.gs = { strokeCursor: getGlyph(g.id).strokes.length, strokeT:0 }; });
+    lines.push(l);
+  }
+  lines.push(newLine(H*0.72));
+}
+
+function update(dt, now){
+  updateSparks(dt);
+  maybeTranslate(now);
+
+  if(!lines.length){ initManuscript(); return; }
+  const active = lines[lines.length-1];
+
+  if(active.state==='writing'){
+    if(active.writeIndex >= active.glyphs.length){
+      active.state='shimmer'; active.shimmerT=0;
+    } else {
+      const entry = active.glyphs[active.writeIndex];
+      const g = getGlyph(entry.id);
+      const gs = ensureGlyphState(entry);
+      const strokeCount = g.strokes.length;
+      if(gs.dur === undefined) gs.dur = STROKE_DURATION * (0.7+0.6*Math.random());
+      gs.strokeT += dt/gs.dur;
+      if(gs.strokeT >= 1){
+        gs.strokeT = 0;
+        gs.dur = undefined;
+        gs.strokeCursor++;
+        // spark burst at stroke end handled in draw via lastEnd; approximate here using cached endpoint
+        entry.burstPending = true;
+        if(gs.strokeCursor >= strokeCount){
+          entry.reveal = 1;
+          active.writeIndex++;
+        }
+      }
+    }
+  } else if(active.state==='shimmer'){
+    active.shimmerT += dt;
+    if(active.shimmerT > 1.6){
+      active.state='settled';
+      // spawn the next writing line below (new scripture grows downward on the page;
+      // scrollY continuously carries the whole stack upward for the living-manuscript feel)
+      const newY = active.y + lineSpacing;
+      lines.push(newLine(newY));
+    }
+  }
+
+  // scroll: once we have more than N lines, ease scroll upward continuously for infinite feel
+  const maxLines = Math.ceil(H/lineSpacing)+3;
+  if(lines.length > maxLines){
+    const doomed = lines[0];
+    if(doomed.state!=='fading'){ doomed.state='fading'; doomed.fadeT=0; }
+  }
+  for(let i=lines.length-1;i>=0;i--){
+    const l = lines[i];
+    if(l.state==='fading'){
+      l.fadeT += dt;
+      if(l.fadeT>2.2) lines.splice(i,1);
+    }
+  }
+
+  // camera: keep the actively-writing line pinned at ~72% height, eased, so
+  // the stele always reads full and the page glides up as scripture grows
+  const act = lines[lines.length-1];
+  const targetScroll = H*0.72 - act.y;
+  scrollY += (targetScroll - scrollY) * Math.min(1, dt*0.9);
+}
+
+// ---------- draw everything ----------
+function drawVignette(){
+  const g = ctx.createRadialGradient(W*DPR/2,H*DPR/2,0, W*DPR/2,H*DPR/2, Math.max(W,H)*DPR*0.75);
+  g.addColorStop(0,'rgba(0,0,0,0)');
+  g.addColorStop(1,'rgba(0,0,0,0.45)');
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W*DPR,H*DPR);
+}
+let grainCanvas=null;
+function buildGrain(){
+  const gc = document.createElement('canvas');
+  gc.width=180; gc.height=320;
+  const gctx = gc.getContext('2d');
+  const id = gctx.createImageData(180,320);
+  for(let i=0;i<id.data.length;i+=4){
+    const v = 200+Math.random()*40;
+    id.data[i]=v; id.data[i+1]=v*0.96; id.data[i+2]=v*0.88; id.data[i+3]= Math.random()*10;
+  }
+  gctx.putImageData(id,0,0);
+  grainCanvas = gc;
+}
+function drawGrain(){
+  if(!grainCanvas) buildGrain();
+  ctx.save();
+  ctx.globalAlpha = 0.05;
+  ctx.globalCompositeOperation='overlay';
+  ctx.drawImage(grainCanvas, 0,0, W*DPR, H*DPR);
+  ctx.restore();
+}
+
+// Bake a fully-written line's glow into its own small offscreen canvas ONCE.
+// This keeps per-frame cost bounded: settled lines cost one drawImage() each,
+// not N strokes x 3 blur passes every frame (scar tissue #1 — no unbounded GPU work).
+function lineDrawWidth(cs){
+  return Math.min(W*0.86,980)*DPR + cs*2;
+}
+function bakeLine(line, cs){
+  const bw = Math.ceil(lineDrawWidth(cs));
+  const bh = Math.ceil(cs*2.6); // padded so halos fade before the canvas edge (no clip bands)
+  const OY = Math.round(bh*0.28);
+  const bc = document.createElement('canvas');
+  bc.width = bw; bc.height = bh;
+  const bctx = bc.getContext('2d');
+  const savedCtx = ctx;
+  ctx = bctx; // reuse drawGlyph/drawStroke which reference module-level `ctx`
+  let x = cs*0.3;
+  for(let gi=0; gi<line.glyphs.length; gi++){
+    const entry = line.glyphs[gi];
+    if(entry.gap) x += cs*0.55;
+    const g = getGlyph(entry.id);
+    const localGs = { strokeCursor: g.strokes.length, strokeT:0 };
+    drawGlyph(g, x, OY, cs, localGs, preset.ink, preset.accent, 0);
+    x += cs*1.12;
+  }
+  ctx = savedCtx;
+  line.baked = bc;
+  line.bakedW = bw;
+  line.bakedH = bh;
+  line.bakedOY = OY;
+}
+
+function draw(now){
+  // fade background instead of hard clear -> ember trailing feel on stroke glows
+  ctx.fillStyle = '#0a0603';
+  ctx.fillRect(0,0,W*DPR,H*DPR);
+
+  const cs = CELL*DPR * (preset.density==='dense'?1:preset.density==='terse'?0.94:1.08);
+  const spacing = lineSpacing*DPR;
+  const colX = (W*DPR - Math.min(W,900)*DPR)/2 + (W<900? cs*0.1 : 0);
+
+  for(const line of lines){
+    const ly = line.y*DPR + scrollY*DPR;
+    if(ly < -spacing*1.5 || ly > H*DPR+spacing*1.5) continue;
+
+    let fadeAlpha = 1;
+    if(line.state==='fading'){
+      fadeAlpha = Math.max(0, 1 - line.fadeT/2.2);
+    }
+    let shimmerBoost = 0;
+    if(line.state==='shimmer'){
+      shimmerBoost = Math.sin(Math.min(1,line.shimmerT/1.6)*Math.PI) * 0.5;
+    }
+
+    // fully-settled/fading lines: cheap blit of pre-baked glow bitmap
+    if(line.state==='settled' || line.state==='fading'){
+      if(!line.baked) bakeLine(line, cs);
+      ctx.save();
+      ctx.globalAlpha = fadeAlpha;
+      ctx.drawImage(line.baked, colX, ly - line.bakedOY);
+      ctx.restore();
+      continue;
+    }
+
+    // actively writing / shimmering line: full per-stroke render (only ONE such line at a time)
+    ctx.save();
+    ctx.globalAlpha = fadeAlpha;
+
+    let x = colX + cs*0.3;
+
+    for(let gi=0; gi<line.glyphs.length; gi++){
+      const entry = line.glyphs[gi];
+      if(entry.gap) x += cs*0.55;
+      const gs = ensureGlyphState(entry);
+      const written = gi < line.writeIndex || entry.reveal===1;
+      const isCurrent = gi === line.writeIndex && line.state==='writing';
+
+      if(!written && !isCurrent){ x += cs*1.12; continue; }
+
+      const g = getGlyph(entry.id);
+      const inkColor = preset.ink;
+      const accentColor = preset.accent;
+
+      // shimmer flash color shift
+      let colorMain = inkColor;
+      if(shimmerBoost>0.02){
+        colorMain = lerpColor(inkColor, '#ffffff', shimmerBoost*0.4);
+      }
+
+      const localGs = written ? { strokeCursor: g.strokes.length, strokeT:0 } : gs;
+      const tip = drawGlyph(g, x, ly, cs, localGs, colorMain, accentColor, now);
+
+      if(isCurrent && tip){
+        drawPenTip(tip.p, accentColor);
+        if(entry.burstPending){
+          spawnBurst(tip.p.x, tip.p.y, accentColor, 10);
+          entry.burstPending = false;
+        }
+      }
+
+      // translation flicker overlay
+      if(line.translate && line.translate.idx===gi){
+        const el = now - line.translate.t;
+        const dur = line.translate.dur;
+        if(el < dur){
+          const p = el/dur;
+          const a = p<0.15? p/0.15 : p>0.7 ? Math.max(0,1-(p-0.7)/0.3) : 1;
+          ctx.save();
+          ctx.globalCompositeOperation='lighter';
+          ctx.font = `${Math.floor(cs*0.34)}px monospace`;
+          ctx.textAlign='center';
+          ctx.shadowColor = accentColor; ctx.shadowBlur = 16*DPR;
+          ctx.fillStyle = '#eafcff';
+          ctx.globalAlpha = a*0.95;
+          ctx.fillText(line.translate.word, x+cs*0.5, ly - cs*0.18);
+          ctx.restore();
+        } else {
+          line.translate = null;
+        }
+      }
+
+      x += cs*1.12;
+    }
+    ctx.restore();
+  }
+
+  drawSparks();
+  drawVignette();
+  drawGrain();
+}
+
+function lerpColor(a,b,t){
+  const pa = hexToRgb(a), pb = hexToRgb(b);
+  const r = Math.round(pa.r+(pb.r-pa.r)*t);
+  const g = Math.round(pa.g+(pb.g-pa.g)*t);
+  const bl = Math.round(pa.b+(pb.b-pa.b)*t);
+  return `rgb(${r},${g},${bl})`;
+}
+function hexToRgb(h){
+  h=h.replace('#','');
+  return { r:parseInt(h.substr(0,2),16), g:parseInt(h.substr(2,2),16), b:parseInt(h.substr(4,2),16) };
+}
+
+// ---------- context-loss safety ----------
+let contextLost=false;
+cv.addEventListener('webglcontextlost', e=>{}, false);
+window.addEventListener('error', function(e){
+  // don't blackout silently — leave last frame; log only
+});
+
+// ---------- main loop ----------
+window.__frameCount = 0;
+function frame(now){
+  const dt = Math.min(0.05, (now-lastT)/1000);
+  lastT = now;
+  try{
+    update(dt, now);
+    draw(now);
+  } catch(err){
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.fillStyle='#ffcf6a'; ctx.font='16px monospace';
+    ctx.fillText('XENOGLOSSIA: render error — ' + (err&&err.message||err), 20, 40);
+    console.error('frame error', err && err.stack || err);
+  }
+  window.__frameCount++;
+  requestAnimationFrame(frame);
+}
+
+// ---------- UI ----------
+const uiEl = document.getElementById('ui');
+const badgeEl = document.getElementById('badge');
+const dotsEl = document.getElementById('dots');
+const langtag = document.getElementById('langtag');
+const seedtag = document.getElementById('seedtag');
+
+function buildDots(){
+  dotsEl.innerHTML='';
+  PRESETS.forEach((p,i)=>{
+    const d = document.createElement('div');
+    d.className = 'dot'+(i===presetIdx?' on':'');
+    d.title = p.name;
+    d.onclick = (e)=>{ e.stopPropagation(); setPreset(i); wake(); };
+    dotsEl.appendChild(d);
+  });
+}
+function updateTag(){
+  langtag.textContent = preset.name + ' · SEED ' + (seed%10000).toString().padStart(4,'0');
+}
+
+function setPreset(i){
+  presetIdx = ((i%PRESETS.length)+PRESETS.length)%PRESETS.length;
+  preset = PRESETS[presetIdx];
+  buildLanguage();
+  initManuscript();
+  buildDots();
+  updateTag();
+}
+function reseed(){
+  seed = (Date.now() ^ Math.floor(Math.random()*1e9)) >>> 0;
+  buildLanguage();
+  initManuscript();
+  updateTag();
+}
+
+document.getElementById('reseed').onclick = (e)=>{ e.stopPropagation(); reseed(); wake(); };
+document.addEventListener('click', (e)=>{
+  if(e.target.closest && (e.target.closest('.dot') || e.target.closest('.reseed'))) return;
+  reseed();
+});
+
+// idle fade
+let idleTimer=null;
+function wake(){
+  uiEl.classList.remove('hide'); badgeEl.classList.remove('hide');
+  if(idleTimer) clearTimeout(idleTimer);
+  if(CAPTURE) return;
+  idleTimer = setTimeout(()=>{ uiEl.classList.add('hide'); badgeEl.classList.add('hide'); }, 3000);
+}
+addEventListener('mousemove', wake);
+addEventListener('touchstart', wake);
+
+// ---------- capture mode ----------
+if(CAPTURE){
+  uiEl.style.display='none';
+  badgeEl.style.display='none';
+}
+
+// ---------- boot ----------
+window.studio = {
+  presets: PRESETS.map(p=>p.name),
+  setPreset: setPreset,
+  reseed: reseed,
+  params: { get seed(){ return seed; }, get presetIdx(){ return presetIdx; } }
+};
+
+resize();
+buildDots();
+buildLanguage();
+initManuscript();
+updateTag();
+wake();
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>

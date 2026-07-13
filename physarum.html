@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mycelium: Living Slime-Mold Network Simulator | Near-Phi</title>
+<meta name="description" content="A GPU physarum simulation: a million agents sense and deposit trail pheromone, self-organizing into a living branching network. Seeded on the Flower of Life, it dissolves into veins that never stop reorganizing. Free and interactive.">
+<link rel="canonical" href="https://near-phi.github.io/physarum.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Near-Phi">
+<meta property="og:title" content="Mycelium: Living Slime-Mold Network Simulator">
+<meta property="og:description" content="A GPU physarum simulation: a million agents self-organize into a living branching network, seeded on the Flower of Life. Free and interactive.">
+<meta property="og:url" content="https://near-phi.github.io/physarum.html">
+<meta property="og:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@Near_Phi">
+<meta name="twitter:title" content="Mycelium: Living Slime-Mold Network Simulator">
+<meta name="twitter:description" content="A GPU physarum simulation: a million agents self-organize into a living branching network, live in your browser.">
+<meta name="twitter:image" content="https://near-phi.github.io/brand/near_phi_banner.png">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Mycelium",
+  "url": "https://near-phi.github.io/physarum.html",
+  "description": "A browser-based GPU physarum (slime-mold) simulation where a million sensing agents deposit pheromone trail and self-organize into a living, ever-reorganizing branching network, seeded on the Flower of Life.",
+  "applicationCategory": "EducationalApplication",
+  "operatingSystem": "Web browser",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "isPartOf": { "@type": "WebSite", "name": "Near-Phi", "url": "https://near-phi.github.io/" },
+  "publisher": { "@type": "Organization", "name": "Near-Phi", "url": "https://near-phi.github.io/" }
+}
+</script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #000; color: #e0e0e0; font-family: 'Consolas', 'Monaco', monospace; overflow: hidden; height: 100%; width: 100%; }
+  canvas { display: block; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; }
+
+  #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; transition: opacity 0.8s ease; }
+  #ui.faded { opacity: 0; }
+
+  #title {
+    position: fixed; top: 18px; left: 20px; font-size: 15px; font-weight: 700;
+    letter-spacing: 5px; color: #bdfff0; text-shadow: 0 0 12px rgba(89,242,255,0.7), 0 0 26px rgba(89,242,255,0.35);
+  }
+  #title .sub { display: block; font-size: 9px; letter-spacing: 2px; font-weight: 400; color: #ffcf6a; margin-top: 3px; text-shadow: 0 0 10px rgba(255,207,106,0.6); }
+
+  #dots { position: fixed; bottom: 18px; left: 20px; display: flex; gap: 10px; pointer-events: auto; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%; background: rgba(89,242,255,0.15);
+    border: 1px solid rgba(89,242,255,0.5); cursor: pointer; transition: all 0.25s;
+  }
+  .dot:hover { background: rgba(89,242,255,0.4); }
+  .dot.active { background: #59f2ff; box-shadow: 0 0 10px #59f2ff, 0 0 20px rgba(89,242,255,0.6); }
+
+  #hint {
+    position: fixed; bottom: 18px; right: 20px; font-size: 10px; letter-spacing: 1px;
+    color: rgba(255,255,255,0.35);
+  }
+
+  #fallback { display: none; position: fixed; inset: 0; align-items: center; justify-content: center; color: #ff6a6a; font-size: 14px; text-align: center; padding: 20px; }
+  #ctxlost { display: none; position: fixed; inset: 0; align-items: center; justify-content: center; color: #ffcf6a; font-size: 16px; text-align: center; background: rgba(0,0,0,0.85); z-index: 999; }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+
+<div id="ui">
+  <div id="title">MYCELIUM<span class="sub">living network / physarum</span></div>
+  <div id="dots">
+    <div class="dot active" data-i="0" title="Flower of Life"></div>
+    <div class="dot" data-i="1" title="Phyllotaxis spiral"></div>
+    <div class="dot" data-i="2" title="Ring"></div>
+  </div>
+  <div id="hint">click: feed &middot; 1/2/3: presets</div>
+</div>
+
+<div id="fallback">WebGL2 is not available on this device.<br>Mycelium needs a GPU-capable browser.</div>
+<div id="ctxlost">SIGNAL LOST<br><span style="font-size:11px;color:#999">reconnecting the mycelial network&hellip;</span></div>
+
+<!-- ============ AGENT UPDATE (sense + rotate + move + deposit-flag) ============ -->
+<script id="vs-quad" type="x-shader/x-vertex">#version 300 es
+in vec2 a_pos;
+out vec2 v_uv;
+void main() {
+  v_uv = a_pos * 0.5 + 0.5;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}
+</script>
+
+<script id="fs-agent" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outState;
+
+uniform sampler2D u_agents;   // rgba32f: xy = position (0..1 uv), z = heading (radians), w = unused
+uniform sampler2D u_trail;    // trail density (r channel)
+uniform vec2 u_trailSize;
+uniform float u_dt;
+uniform float u_time;
+uniform float u_sensorDist;
+uniform float u_sensorAngle;
+uniform float u_turnSpeed;
+uniform float u_moveSpeed;
+uniform float u_jitter;
+uniform vec2 u_food;          // uv of last click, w encoded via u_foodActive
+uniform float u_foodActive;
+uniform float u_foodT;
+
+float hash(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.13);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
+float sense(vec2 pos, float angle) {
+  vec2 dir = vec2(cos(angle), sin(angle));
+  vec2 p = pos + dir * (u_sensorDist / u_trailSize);
+  p = fract(p);
+  float t = texture(u_trail, p).r;
+  // gentle attraction to injected food blob
+  if (u_foodActive > 0.5) {
+    float d = distance(p * u_trailSize, u_food * u_trailSize);
+    t += 2.5 * exp(-d * d / 900.0) * u_foodT;
+  }
+  return t;
+}
+
+void main() {
+  ivec2 texel = ivec2(gl_FragCoord.xy);
+  vec4 agent = texelFetch(u_agents, texel, 0);
+  vec2 pos = agent.xy;
+  float heading = agent.z;
+
+  float sF = sense(pos, heading);
+  float sL = sense(pos, heading + u_sensorAngle);
+  float sR = sense(pos, heading - u_sensorAngle);
+
+  float rnd = (hash(pos * 4096.0 + u_time) - 0.5) * u_jitter;
+
+  if (sF > sL && sF > sR) {
+    heading += rnd * 0.15;
+  } else if (sL > sR) {
+    heading += u_turnSpeed + rnd;
+  } else if (sR > sL) {
+    heading -= u_turnSpeed + rnd;
+  } else {
+    heading += rnd;
+  }
+
+  vec2 dir = vec2(cos(heading), sin(heading));
+  vec2 npos = pos + dir * (u_moveSpeed / u_trailSize) * (u_dt * 60.0);
+
+  // wrap toroidally
+  npos = fract(npos);
+
+  outState = vec4(npos, heading, 1.0);
+}
+</script>
+
+<!-- ============ DEPOSIT (agents -> trail additive splat via point rendering) ============ -->
+<script id="vs-deposit" type="x-shader/x-vertex">#version 300 es
+precision highp float;
+uniform sampler2D u_agents;
+uniform vec2 u_agentsSize;
+uniform vec2 u_trailSize;
+out float v_alive;
+void main() {
+  int w = int(u_agentsSize.x);
+  ivec2 texel = ivec2(gl_VertexID % w, gl_VertexID / w);
+  vec4 agent = texelFetch(u_agents, texel, 0);
+  vec2 uv = agent.xy;
+  gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+  gl_PointSize = 1.0;
+  v_alive = 1.0;
+}
+</script>
+
+<script id="fs-deposit" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in float v_alive;
+out vec4 outColor;
+uniform float u_depositAmt;
+void main() {
+  outColor = vec4(u_depositAmt, 0.0, 0.0, 1.0);
+}
+</script>
+
+<!-- ============ DIFFUSE + DECAY (trail ping-pong, 3x3 blur) ============ -->
+<script id="fs-diffuse" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+uniform sampler2D u_trail;
+uniform sampler2D u_deposit;
+uniform vec2 u_texel;
+uniform float u_decay;
+uniform float u_diffuse;
+
+void main() {
+  float sum = 0.0;
+  for (int dy = -1; dy <= 1; dy++) {
+    for (int dx = -1; dx <= 1; dx++) {
+      vec2 off = vec2(float(dx), float(dy)) * u_texel;
+      sum += texture(u_trail, fract(v_uv + off)).r;
+    }
+  }
+  float blurred = sum / 9.0;
+  float prev = texture(u_trail, v_uv).r;
+  float mixed = mix(prev, blurred, u_diffuse);
+  float dep = texture(u_deposit, v_uv).r;
+  float result = (mixed + dep) * u_decay;
+  outColor = vec4(clamp(result, 0.0, 6.0), 0.0, 0.0, 1.0);
+}
+</script>
+
+<!-- ============ RENDER (tone-mapped gradient) ============ -->
+<script id="fs-render" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+uniform sampler2D u_trail;
+uniform vec2 u_texel;
+
+vec3 ramp(float t) {
+  t = clamp(t, 0.0, 1.0);
+  vec3 deepTeal   = vec3(0.0, 0.05, 0.06);
+  vec3 bioCyan    = vec3(0.05, 0.85, 0.95);
+  vec3 amber      = vec3(1.0, 0.62, 0.16);
+  vec3 whiteHot   = vec3(1.0, 0.98, 0.9);
+  vec3 c;
+  if (t < 0.35) {
+    c = mix(deepTeal, bioCyan, t / 0.35);
+  } else if (t < 0.75) {
+    c = mix(bioCyan, amber, (t - 0.35) / 0.4);
+  } else {
+    c = mix(amber, whiteHot, (t - 0.75) / 0.25);
+  }
+  return c;
+}
+
+void main() {
+  float c  = texture(u_trail, v_uv).r;
+  float n  = texture(u_trail, fract(v_uv + vec2(u_texel.x, 0.0))).r;
+  float s  = texture(u_trail, fract(v_uv + vec2(0.0, u_texel.y))).r;
+  float glow = (c + n + s) / 3.0;
+
+  float density = 1.0 - exp(-c * 1.15);
+  vec3 col = ramp(density);
+  // slight bloom bleed from neighborhood
+  col += ramp(glow) * 0.18 * smoothstep(0.0, 1.0, glow);
+  outColor = vec4(col, 1.0);
+}
+</script>
+
+<!-- ============ FADE COMPOSITE (crossfade during reseed) ============ -->
+<script id="fs-copy" type="x-shader/x-fragment">#version 300 es
+precision highp float;
+in vec2 v_uv;
+out vec4 outColor;
+uniform sampler2D u_tex;
+void main() { outColor = texture(u_tex, v_uv); }
+</script>
+
+<script>
+(function () {
+  const canvas = document.getElementById('gl');
+  const fallback = document.getElementById('fallback');
+  const ctxlost = document.getElementById('ctxlost');
+  const ui = document.getElementById('ui');
+
+  const params = new URLSearchParams(location.search);
+  const captureMode = params.get('capture') === '1';
+  if (captureMode) ui.style.display = 'none';
+
+  const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true, alpha: false, powerPreference: 'high-performance' });
+  if (!gl) {
+    fallback.style.display = 'flex';
+    throw new Error('WebGL2 unavailable');
+  }
+
+  const extColorBufferFloat = gl.getExtension('EXT_color_buffer_float');
+  if (!extColorBufferFloat) {
+    fallback.style.display = 'flex';
+    throw new Error('EXT_color_buffer_float unavailable');
+  }
+  // Float textures are NOT linearly filterable in WebGL2 without this extension;
+  // without it, LINEAR-filtered RGBA32F samples silently return black. The trail
+  // buffer relies on LINEAR for smooth glow, so fall back to NEAREST if absent.
+  const extFloatLinear = gl.getExtension('OES_texture_float_linear');
+  const TRAIL_FILTER = extFloatLinear ? gl.LINEAR : gl.NEAREST;
+
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    ctxlost.style.display = 'flex';
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    ctxlost.style.display = 'none';
+    location.reload();
+  });
+
+  // ---------------- shader helpers ----------------
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error('Shader compile error:', gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  function program(vsId, fsId) {
+    const v = compile(gl.VERTEX_SHADER, document.getElementById(vsId).textContent);
+    const f = compile(gl.FRAGMENT_SHADER, document.getElementById(fsId).textContent);
+    const p = gl.createProgram();
+    gl.attachShader(p, v); gl.attachShader(p, f);
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      console.error('Program link error:', gl.getProgramInfoLog(p));
+    }
+    return p;
+  }
+  function uniforms(p, names) {
+    const u = {};
+    names.forEach(n => { u[n] = gl.getUniformLocation(p, n); });
+    return u;
+  }
+
+  const progAgent   = program('vs-quad', 'fs-agent');
+  const progDeposit = program('vs-deposit', 'fs-deposit');
+  const progDiffuse = program('vs-quad', 'fs-diffuse');
+  const progRender  = program('vs-quad', 'fs-render');
+  const progCopy    = program('vs-quad', 'fs-copy');
+
+  const uAgent   = uniforms(progAgent, ['u_agents','u_trail','u_trailSize','u_dt','u_time','u_sensorDist','u_sensorAngle','u_turnSpeed','u_moveSpeed','u_jitter','u_food','u_foodActive','u_foodT']);
+  const uDeposit = uniforms(progDeposit, ['u_agents','u_agentsSize','u_trailSize','u_depositAmt']);
+  const uDiffuse = uniforms(progDiffuse, ['u_trail','u_deposit','u_texel','u_decay','u_diffuse']);
+  const uRender  = uniforms(progRender, ['u_trail','u_texel']);
+  const uCopy    = uniforms(progCopy, ['u_tex']);
+
+  // ---------------- fullscreen quad ----------------
+  const quadBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+
+  function bindQuad(p) {
+    const loc = gl.getAttribLocation(p, 'a_pos');
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  }
+
+  // ---------------- runtime size decision (perf probe) ----------------
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
+  // Agent texture sizes: start conservative, upgrade after a quick fps probe.
+  let AGENT_DIM = 512; // 512x512 = 262144 agents
+  const AGENT_DIM_HI = 1024; // 1,048,576 agents
+
+  // Trail buffer resolution (independent of agent count)
+  let TRAIL_W = 0, TRAIL_H = 0;
+
+  function fbTex(w, h, filter) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+  function fbo(tex) {
+    const f = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return f;
+  }
+
+  // agent ping-pong (A/B)
+  let agentTexA, agentTexB, agentFboA, agentFboB;
+  // trail ping-pong (A/B), plus a deposit-accumulation buffer
+  let trailTexA, trailTexB, trailFboA, trailFboB;
+  let depositTex, depositFbo;
+
+  let agentRead = 0; // 0 = A is current, 1 = B is current
+  let trailRead = 0;
+
+  function makeAgentBuffers(dim) {
+    agentTexA = fbTex(dim, dim, gl.NEAREST);
+    agentTexB = fbTex(dim, dim, gl.NEAREST);
+    agentFboA = fbo(agentTexA);
+    agentFboB = fbo(agentTexB);
+  }
+
+  function makeTrailBuffers(w, h) {
+    trailTexA = fbTex(w, h, TRAIL_FILTER);
+    trailTexB = fbTex(w, h, TRAIL_FILTER);
+    trailFboA = fbo(trailTexA);
+    trailFboB = fbo(trailTexB);
+    depositTex = fbTex(w, h, gl.NEAREST);
+    depositFbo = fbo(depositTex);
+  }
+
+  // ---------------- seeding patterns ----------------
+  // Flower of Life: 7 overlapping circle outlines (center + 6 around), agents placed ON the circle strokes.
+  function seedFlowerOfLife(dim) {
+    const n = dim * dim;
+    const data = new Float32Array(n * 4);
+    const cx = 0.5, cy = 0.5;
+    const R = 0.13; // circle radius in uv
+    const centers = [[cx, cy]];
+    for (let k = 0; k < 6; k++) {
+      const a = k * Math.PI / 3;
+      centers.push([cx + R * Math.cos(a), cy + R * Math.sin(a)]);
+    }
+    for (let i = 0; i < n; i++) {
+      const c = centers[i % centers.length];
+      const t = Math.random() * Math.PI * 2;
+      const jitter = (Math.random() - 0.5) * 0.006;
+      const x = c[0] + (R + jitter) * Math.cos(t);
+      const y = c[1] + (R + jitter) * Math.sin(t);
+      const heading = t + Math.PI / 2 + (Math.random() - 0.5) * 0.3;
+      data[i * 4 + 0] = x;
+      data[i * 4 + 1] = y;
+      data[i * 4 + 2] = heading;
+      data[i * 4 + 3] = 1.0;
+    }
+    return data;
+  }
+
+  // Phyllotaxis spiral
+  function seedPhyllotaxis(dim) {
+    const n = dim * dim;
+    const data = new Float32Array(n * 4);
+    const golden = Math.PI * (3 - Math.sqrt(5));
+    const maxR = 0.46;
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const r = maxR * Math.sqrt(t);
+      const a = i * golden;
+      const x = 0.5 + r * Math.cos(a);
+      const y = 0.5 + r * Math.sin(a);
+      const heading = a + Math.PI / 2;
+      data[i * 4 + 0] = x;
+      data[i * 4 + 1] = y;
+      data[i * 4 + 2] = heading;
+      data[i * 4 + 3] = 1.0;
+    }
+    return data;
+  }
+
+  // Ring
+  function seedRing(dim) {
+    const n = dim * dim;
+    const data = new Float32Array(n * 4);
+    const R = 0.32;
+    for (let i = 0; i < n; i++) {
+      const t = Math.random() * Math.PI * 2;
+      const jitter = (Math.random() - 0.5) * 0.01;
+      const x = 0.5 + (R + jitter) * Math.cos(t);
+      const y = 0.5 + (R + jitter) * Math.sin(t);
+      const heading = t + Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+      data[i * 4 + 0] = x;
+      data[i * 4 + 1] = y;
+      data[i * 4 + 2] = heading;
+      data[i * 4 + 3] = 1.0;
+    }
+    return data;
+  }
+
+  const SEEDERS = [seedFlowerOfLife, seedPhyllotaxis, seedRing];
+
+  function uploadAgentData(data, dim) {
+    gl.bindTexture(gl.TEXTURE_2D, agentTexA);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, dim, dim, gl.RGBA, gl.FLOAT, data);
+    gl.bindTexture(gl.TEXTURE_2D, agentTexB);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, dim, dim, gl.RGBA, gl.FLOAT, data);
+    agentRead = 0;
+  }
+
+  function clearTrail() {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, trailFboA);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, trailFboB);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    trailRead = 0;
+  }
+
+  // ---------------- state / params ----------------
+  const state = {
+    preset: 0,
+    sensorDist: 7.0,
+    sensorAngle: 40.0 * Math.PI / 180.0,
+    turnSpeed: 0.6,
+    moveSpeed: 1.1,
+    jitter: 1.1,
+    decay: 0.88,
+    diffuse: 0.78,
+    depositAmt: 0.7,
+  };
+
+  window.studio = {
+    presets: ['Flower of Life', 'Phyllotaxis', 'Ring'],
+    setPreset(i) { setPreset(i); },
+    params: state,
+  };
+  let foodActive = 0.0, foodT = 0.0, foodUV = [0.5, 0.5];
+
+  function setPreset(i) {
+    state.preset = ((i % SEEDERS.length) + SEEDERS.length) % SEEDERS.length;
+    const data = SEEDERS[state.preset](AGENT_DIM);
+    uploadAgentData(data, AGENT_DIM);
+    clearTrail();
+    document.querySelectorAll('.dot').forEach((d, idx) => d.classList.toggle('active', idx === state.preset));
+    seedStartTime = performance.now();
+  }
+
+  // soft reseed: blend a fresh scatter of *some* agents back onto a seed pattern
+  // without a hard cut (keeps the network "alive" per the 30s law).
+  function softReseed() {
+    const data = SEEDERS[state.preset](AGENT_DIM);
+    // only overwrite a fraction of agents so the living network persists
+    const n = AGENT_DIM * AGENT_DIM;
+    gl.bindTexture(gl.TEXTURE_2D, agentRead === 0 ? agentTexA : agentTexB);
+    const full = new Float32Array(n * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, agentRead === 0 ? agentFboA : agentFboB);
+    gl.readPixels(0, 0, AGENT_DIM, AGENT_DIM, gl.RGBA, gl.FLOAT, full);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    for (let i = 0; i < n; i++) {
+      if (Math.random() < 0.22) {
+        full[i * 4 + 0] = data[i * 4 + 0];
+        full[i * 4 + 1] = data[i * 4 + 1];
+        full[i * 4 + 2] = data[i * 4 + 2];
+      }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, agentTexA);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, AGENT_DIM, AGENT_DIM, gl.RGBA, gl.FLOAT, full);
+    gl.bindTexture(gl.TEXTURE_2D, agentTexB);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, AGENT_DIM, AGENT_DIM, gl.RGBA, gl.FLOAT, full);
+    agentRead = 0;
+  }
+
+  // ---------------- perf probe & init ----------------
+  let seedStartTime = performance.now();
+
+  function resize() {
+    const w = Math.floor(window.innerWidth * dpr);
+    const h = Math.floor(window.innerHeight * dpr);
+    canvas.width = w; canvas.height = h;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    TRAIL_W = w; TRAIL_H = h;
+  }
+
+  function initBuffers(dim) {
+    AGENT_DIM = dim;
+    makeAgentBuffers(dim);
+    makeTrailBuffers(TRAIL_W, TRAIL_H);
+    const data = SEEDERS[state.preset](dim);
+    uploadAgentData(data, dim);
+    clearTrail();
+    seedStartTime = performance.now();
+  }
+
+  resize();
+  window.addEventListener('resize', () => {
+    resize();
+    makeTrailBuffers(TRAIL_W, TRAIL_H);
+    clearTrail();
+  });
+
+  initBuffers(AGENT_DIM);
+
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.CULL_FACE);
+
+  // ---------------- interaction ----------------
+  canvas.addEventListener('pointerdown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    foodUV = [(e.clientX - rect.left) / rect.width, 1.0 - (e.clientY - rect.top) / rect.height];
+    foodActive = 1.0;
+    foodT = 1.0;
+  });
+
+  document.querySelectorAll('.dot').forEach(dot => {
+    dot.addEventListener('click', () => setPreset(parseInt(dot.dataset.i, 10)));
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === '1') setPreset(0);
+    if (e.key === '2') setPreset(1);
+    if (e.key === '3') setPreset(2);
+  });
+
+  // UI idle fade
+  let lastActivity = performance.now();
+  function poke() { lastActivity = performance.now(); ui.classList.remove('faded'); }
+  ['mousemove','pointerdown','keydown','touchstart'].forEach(ev => window.addEventListener(ev, poke, { passive: true }));
+
+  // ---------------- perf-based agent upgrade probe ----------------
+  let probeFrames = 0, probeStart = performance.now(), probed = false;
+  const PROBE_WINDOW_FRAMES = 90;
+
+  // ---------------- main loop ----------------
+  let lastT = performance.now();
+  let frameCount = 0;
+  let lastReseed = performance.now();
+  const RESEED_INTERVAL_MS = 30000;
+
+  function stepAgents(dt, now) {
+    const srcTex = agentRead === 0 ? agentTexA : agentTexB;
+    const dstFbo = agentRead === 0 ? agentFboB : agentFboA;
+    const trailSrc = trailRead === 0 ? trailTexA : trailTexB;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dstFbo);
+    gl.viewport(0, 0, AGENT_DIM, AGENT_DIM);
+    gl.useProgram(progAgent);
+    bindQuad(progAgent);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(uAgent.u_agents, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, trailSrc);
+    gl.uniform1i(uAgent.u_trail, 1);
+
+    gl.uniform2f(uAgent.u_trailSize, TRAIL_W, TRAIL_H);
+    gl.uniform1f(uAgent.u_dt, dt);
+    gl.uniform1f(uAgent.u_time, now * 0.001);
+    gl.uniform1f(uAgent.u_sensorDist, state.sensorDist);
+    gl.uniform1f(uAgent.u_sensorAngle, state.sensorAngle);
+    gl.uniform1f(uAgent.u_turnSpeed, state.turnSpeed);
+    gl.uniform1f(uAgent.u_moveSpeed, state.moveSpeed);
+    gl.uniform1f(uAgent.u_jitter, state.jitter);
+    gl.uniform2f(uAgent.u_food, foodUV[0], foodUV[1]);
+    gl.uniform1f(uAgent.u_foodActive, foodActive);
+    gl.uniform1f(uAgent.u_foodT, foodT);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    agentRead = agentRead === 0 ? 1 : 0;
+  }
+
+  function depositTrail() {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, depositFbo);
+    gl.viewport(0, 0, TRAIL_W, TRAIL_H);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.useProgram(progDeposit);
+    const agentTex = agentRead === 0 ? agentTexA : agentTexB;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, agentTex);
+    gl.uniform1i(uDeposit.u_agents, 0);
+    gl.uniform2f(uDeposit.u_agentsSize, AGENT_DIM, AGENT_DIM);
+    gl.uniform2f(uDeposit.u_trailSize, TRAIL_W, TRAIL_H);
+    gl.uniform1f(uDeposit.u_depositAmt, state.depositAmt);
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE); // additive
+    const loc = gl.getAttribLocation(progDeposit, 'a_pos'); // unused attr guard
+    gl.drawArrays(gl.POINTS, 0, AGENT_DIM * AGENT_DIM);
+    gl.disable(gl.BLEND);
+  }
+
+  function diffuseTrail() {
+    const srcTex = trailRead === 0 ? trailTexA : trailTexB;
+    const dstFbo = trailRead === 0 ? trailFboB : trailFboA;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, dstFbo);
+    gl.viewport(0, 0, TRAIL_W, TRAIL_H);
+    gl.useProgram(progDiffuse);
+    bindQuad(progDiffuse);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(uDiffuse.u_trail, 0);
+
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, depositTex);
+    gl.uniform1i(uDiffuse.u_deposit, 1);
+
+    gl.uniform2f(uDiffuse.u_texel, 1.0 / TRAIL_W, 1.0 / TRAIL_H);
+    gl.uniform1f(uDiffuse.u_decay, state.decay);
+    gl.uniform1f(uDiffuse.u_diffuse, state.diffuse);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    trailRead = trailRead === 0 ? 1 : 0;
+  }
+
+  function renderTrail() {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.useProgram(progRender);
+    bindQuad(progRender);
+
+    const trailTex = trailRead === 0 ? trailTexA : trailTexB;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, trailTex);
+    gl.uniform1i(uRender.u_trail, 0);
+    gl.uniform2f(uRender.u_texel, 1.0 / TRAIL_W, 1.0 / TRAIL_H);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    const dtRaw = (now - lastT) / 1000;
+    const dt = Math.min(dtRaw, 1 / 20); // TDR guard: never let a huge dt cause runaway motion
+    lastT = now;
+
+    // step 1x per frame each: bounded, fixed-cost passes (no agent loops in JS)
+    stepAgents(dt, now);
+    depositTrail();
+    diffuseTrail();
+    renderTrail();
+
+    if (foodActive > 0.5) {
+      foodT -= dt * 0.35;
+      if (foodT <= 0) { foodActive = 0.0; foodT = 0.0; }
+    }
+
+    // idle UI fade after 3s
+    if (!captureMode && performance.now() - lastActivity > 3000) {
+      ui.classList.add('faded');
+    }
+
+    // periodic soft reseed so the network never goes stale
+    if (now - lastReseed > RESEED_INTERVAL_MS) {
+      lastReseed = now;
+      softReseed();
+    }
+
+    // one-time perf probe: if 512x512 holds a strong frame rate, upgrade to 1024x1024
+    if (!probed) {
+      probeFrames++;
+      if (probeFrames === 1) probeStart = performance.now();
+      if (probeFrames >= PROBE_WINDOW_FRAMES) {
+        const elapsed = performance.now() - probeStart;
+        const fps = (probeFrames - 1) / (elapsed / 1000);
+        probed = true;
+        if (fps > 55 && AGENT_DIM < AGENT_DIM_HI) {
+          state.preset = state.preset; // keep current preset
+          initBuffers(AGENT_DIM_HI);
+        }
+      }
+    }
+
+    frameCount++;
+  }
+
+  // capture mode: best preset immediately, no UI
+  if (captureMode) {
+    setPreset(0);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+
+<div id="near-phi-badge" style="position:fixed;bottom:10px;right:10px;z-index:99999;display:flex;align-items:center;gap:8px;background:rgba(10,10,15,.82);border:1px solid rgba(255,255,255,.15);border-radius:20px;padding:5px 12px;font:600 11px/1.2 'Segoe UI',system-ui,sans-serif;backdrop-filter:blur(4px)">
+  <a href="https://near-phi.github.io/" style="color:#c8c8d8;text-decoration:none">Near<span style="color:#4a9eff">Phi</span></a>
+  <span style="color:#3a3a4a">|</span>
+  <a href="https://x.com/Near_Phi" style="color:#6a6a7a;text-decoration:none;font-weight:400">@Near_Phi</a>
+</div>
+
+</body>
+</html>
