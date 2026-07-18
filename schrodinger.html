@@ -796,12 +796,28 @@ function hslToRgb(h, s, l) {
   ];
 }
 
+// Auto-exposure (2026-07-18): normalize() keeps total probability at 1 over
+// 65k cells, so per-cell peaks sit near 1e-3 - times brightness*200 that is
+// ~6 of 255 gray levels even at the slider max. The tool rendered essentially
+// black in every mode since launch. Expose for the frame's own peak; the
+// brightness slider still scales around its default of 5.
+let expoRef = 1e-9;
+
 function render() {
   const data = imgData.data;
 
+  let fieldMax = 1e-12;
+  for (let idx = 0; idx < N * N; idx++) {
+    if (V[idx] > 1) continue;
+    const pr = psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx];
+    if (pr > fieldMax) fieldMax = pr;
+  }
+  expoRef = Math.max(fieldMax, expoRef * 0.97);
+  const gain = (brightness / 5) / expoRef;
+
   if (vizMode === 'prob') {
     for (let idx = 0; idx < N * N; idx++) {
-      const prob = (psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx]) * brightness * 200;
+      const prob = (psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx]) * gain * 235;
       const p4 = idx * 4;
 
       if (V[idx] > 1) {
@@ -831,7 +847,7 @@ function render() {
         data[p4] = vv * 0.3; data[p4+1] = vv * 0.1; data[p4+2] = vv * 0.1; data[p4+3] = 255;
       } else {
         const prob = psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx];
-        const amp = Math.min(1, prob * brightness * 200);
+        const amp = Math.min(1, prob * gain * 0.92);
         let phase = Math.atan2(psiI[idx], psiR[idx]);
         if (phase < 0) phase += 2 * Math.PI;
         const hue = phase / (2 * Math.PI);
@@ -846,7 +862,7 @@ function render() {
         const vv = Math.min(255, V[idx] * 0.8);
         data[p4] = vv * 0.3; data[p4+1] = vv * 0.1; data[p4+2] = vv * 0.1; data[p4+3] = 255;
       } else {
-        const val = psiR[idx] * brightness * 15;
+        const val = psiR[idx] * Math.sqrt(gain) * 0.9;
         if (val > 0) {
           const v = Math.min(255, val * 255);
           data[p4] = v * 0.3; data[p4+1] = v * 0.5; data[p4+2] = v; data[p4+3] = 255;
@@ -1280,5 +1296,8 @@ mainLoop();
   <a href="https://x.com/Near_Phi" style="color:#6a6a7a;text-decoration:none;font-weight:400">@Near_Phi</a>
 </div>
 
+<!-- NEAR PHI STUDIO back nav (2026-07-15, Damon: "no back button to get out of toys"). Hidden during ?capture=1 so it never appears in video renders. -->
+<a id="np-studio-back" href="index.html" title="Back to Studio" style="position:fixed;top:14px;left:14px;z-index:2147483647;display:flex;align-items:center;gap:6px;padding:8px 13px;font:600 12px/1 system-ui,-apple-system,sans-serif;letter-spacing:.06em;color:#eaeaf2;text-decoration:none;background:rgba(8,8,16,.60);border:1px solid rgba(255,255,255,.16);border-radius:9px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 14px rgba(0,0,0,.45);transition:background .15s,transform .15s;user-select:none;pointer-events:auto"><span style="font-size:15px;line-height:1">&#8592;</span><span>STUDIO</span></a>
+<script>(function(){try{var p=new URLSearchParams(location.search),c=p.get('capture');var el=document.getElementById('np-studio-back');if(!el)return;if(c==='1'||c==='true'){el.remove();return;}el.addEventListener('mouseenter',function(){el.style.background='rgba(28,28,50,.9)';el.style.transform='translateY(-1px)';});el.addEventListener('mouseleave',function(){el.style.background='rgba(8,8,16,.60)';el.style.transform='none';});}catch(e){}})();</script>
 </body>
 </html>

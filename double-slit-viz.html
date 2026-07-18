@@ -327,12 +327,31 @@ function hue2rgb(p, q, t) {
   return p;
 }
 
+// Auto-exposure (2026-07-18, replaces the fixed gain): the source column sits
+// at amp ~1 while the diffracted wake past the slits lives around 1e-6 - no
+// fixed constant can show both, which is why this tool read as a black screen
+// with two dots everywhere it was shown. Expose for the brightest cell beyond
+// the source; the wake becomes the picture.
+let expoRef = 1e-9;
+
 function render() {
   const data = imgData.data;
-  // 2800 (was 600, 2026-07-18): at 600 the propagating wake sat below ~1 gray
-  // level - the tool read as a black screen with two dots everywhere it was
-  // shown. amp clamps at 1 so the source column can't oversaturate further.
-  const bright = 2800;
+  // Expose for the TRANSMITTED side - the interference cone past the slits is
+  // the physics payoff and it lives ~50x dimmer than the incident wave. The
+  // incident side is allowed to saturate (bold rainbow); the cone must glow.
+  let transMax = 1e-12, incMax = 1e-12;
+  const pastWall = wallX + wallW + 2;
+  for (let j = spongeW; j < N - spongeW; j++) {
+    for (let i = srcX + 6; i < N; i++) {
+      const idx = j * N + i;
+      if (V[idx] > 1) continue;
+      const pr = psiR[idx] * psiR[idx] + psiI[idx] * psiI[idx];
+      if (i >= pastWall) { if (pr > transMax) transMax = pr; }
+      else if (pr > incMax) incMax = pr;
+    }
+  }
+  expoRef = Math.max(transMax, incMax * 0.02, expoRef * 0.97);
+  const bright = 0.85 / expoRef;
 
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
