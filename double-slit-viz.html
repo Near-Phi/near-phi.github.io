@@ -329,7 +329,10 @@ function hue2rgb(p, q, t) {
 
 function render() {
   const data = imgData.data;
-  const bright = 600;
+  // 2800 (was 600, 2026-07-18): at 600 the propagating wake sat below ~1 gray
+  // level - the tool read as a black screen with two dots everywhere it was
+  // shown. amp clamps at 1 so the source column can't oversaturate further.
+  const bright = 2800;
 
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
@@ -460,5 +463,8 @@ window.addEventListener('resize', () => {
   <a href="https://x.com/Near_Phi" style="color:#6a6a7a;text-decoration:none;font-weight:400">@Near_Phi</a>
 </div>
 
+<!-- NEAR PHI STUDIO back nav (2026-07-15, Damon: "no back button to get out of toys"). Hidden during ?capture=1 so it never appears in video renders. -->
+<a id="np-studio-back" href="index.html" title="Back to Studio" style="position:fixed;top:14px;left:14px;z-index:2147483647;display:flex;align-items:center;gap:6px;padding:8px 13px;font:600 12px/1 system-ui,-apple-system,sans-serif;letter-spacing:.06em;color:#eaeaf2;text-decoration:none;background:rgba(8,8,16,.60);border:1px solid rgba(255,255,255,.16);border-radius:9px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 14px rgba(0,0,0,.45);transition:background .15s,transform .15s;user-select:none;pointer-events:auto"><span style="font-size:15px;line-height:1">&#8592;</span><span>STUDIO</span></a>
+<script>(function(){try{var p=new URLSearchParams(location.search),c=p.get('capture');var el=document.getElementById('np-studio-back');if(!el)return;if(c==='1'||c==='true'){el.remove();return;}el.addEventListener('mouseenter',function(){el.style.background='rgba(28,28,50,.9)';el.style.transform='translateY(-1px)';});el.addEventListener('mouseleave',function(){el.style.background='rgba(8,8,16,.60)';el.style.transform='none';});}catch(e){}})();</script>
 </body>
 </html>

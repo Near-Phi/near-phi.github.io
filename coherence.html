@@ -280,8 +280,11 @@ function draw(){
   for(let i=6;i>=0;i--){
     const r=(Math.min(W,H)*0.12)*(i+1)*(0.7+pulse*0.5);
     g.beginPath(); g.arc(cx,cy,r,0,Math.PI*2);
-    g.strokeStyle=`rgba(${110+i*8},${200-i*10},255,${(playing?0.10:0.04)*(1-i/8)})`;
-    g.lineWidth=devicePixelRatio*1.2; g.stroke();
+    // alpha lifted 0.10->0.30 (2026-07-18): at 0.10 the entrainment rings were
+    // invisible on any recording and near-invisible on real screens; still a
+    // dark ambient visual, just one that actually reads.
+    g.strokeStyle=`rgba(${110+i*8},${200-i*10},255,${(playing?0.30:0.08)*(1-i/8)})`;
+    g.lineWidth=devicePixelRatio*1.8; g.stroke();
   }
   requestAnimationFrame(draw);
 }
@@ -293,5 +296,8 @@ draw();
   <a href="https://x.com/Near_Phi" style="color:#6a6a7a;text-decoration:none;font-weight:400">@Near_Phi</a>
 </div>
 
+<!-- NEAR PHI STUDIO back nav (2026-07-15, Damon: "no back button to get out of toys"). Hidden during ?capture=1 so it never appears in video renders. -->
+<a id="np-studio-back" href="index.html" title="Back to Studio" style="position:fixed;top:14px;left:14px;z-index:2147483647;display:flex;align-items:center;gap:6px;padding:8px 13px;font:600 12px/1 system-ui,-apple-system,sans-serif;letter-spacing:.06em;color:#eaeaf2;text-decoration:none;background:rgba(8,8,16,.60);border:1px solid rgba(255,255,255,.16);border-radius:9px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);box-shadow:0 2px 14px rgba(0,0,0,.45);transition:background .15s,transform .15s;user-select:none;pointer-events:auto"><span style="font-size:15px;line-height:1">&#8592;</span><span>STUDIO</span></a>
+<script>(function(){try{var p=new URLSearchParams(location.search),c=p.get('capture');var el=document.getElementById('np-studio-back');if(!el)return;if(c==='1'||c==='true'){el.remove();return;}el.addEventListener('mouseenter',function(){el.style.background='rgba(28,28,50,.9)';el.style.transform='translateY(-1px)';});el.addEventListener('mouseleave',function(){el.style.background='rgba(8,8,16,.60)';el.style.transform='none';});}catch(e){}})();</script>
 </body>
 </html>
