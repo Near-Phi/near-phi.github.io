@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>AI Particle Field — type an equation, watch reality move</title>
+<style>
+  :root{ --gold:#e9c46a; --ink:#05070d; --panel:rgba(10,13,22,.82); --line:rgba(233,196,106,.22); }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; background:var(--ink); color:#e8ecf5; overflow:hidden;
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif; }
+  #gl{ position:fixed; inset:0; width:100vw; height:100vh; display:block; touch-action:none; }
+  .brand{ position:fixed; top:14px; left:16px; z-index:5; font-weight:700; letter-spacing:.14em;
+    font-size:12px; color:var(--gold); text-shadow:0 0 18px rgba(233,196,106,.5); user-select:none;}
+  .brand small{ display:block; letter-spacing:.02em; font-weight:400; color:#8a93a8; font-size:10px; margin-top:3px;}
+  /* dock */
+  #dock{ position:fixed; z-index:6; left:16px; bottom:16px; width:min(430px,calc(100vw - 32px));
+    background:var(--panel); border:1px solid var(--line); border-radius:14px; backdrop-filter:blur(9px);
+    box-shadow:0 20px 60px rgba(0,0,0,.55); overflow:hidden; transition:transform .25s ease; }
+  #dock.min{ transform:translateY(calc(100% - 46px)); }
+  .dhead{ display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; user-select:none;
+    border-bottom:1px solid var(--line); }
+  .dhead b{ font-size:13px; letter-spacing:.02em;}
+  .dhead .chev{ margin-left:auto; color:#8a93a8; transition:transform .25s; font-size:12px;}
+  #dock.min .chev{ transform:rotate(180deg);}
+  .dbody{ padding:12px 14px 14px; }
+  .row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .presets{ display:flex; gap:7px; flex-wrap:wrap; margin-bottom:11px;}
+  .chip{ font-size:11.5px; padding:6px 11px; border-radius:999px; cursor:pointer;
+    background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:#cfd6e6; transition:.15s;}
+  .chip:hover{ border-color:var(--gold); color:#fff;}
+  .chip.on{ background:rgba(233,196,106,.16); border-color:var(--gold); color:var(--gold);}
+  textarea{ width:100%; height:112px; resize:vertical; background:#080b13; color:#bfe8d0;
+    border:1px solid rgba(255,255,255,.12); border-radius:9px; padding:9px 10px; font-size:12px;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace; line-height:1.45; }
+  textarea::placeholder{ color:#556; }
+  .btns{ display:flex; gap:8px; margin-top:9px; }
+  button{ font:inherit; font-size:12.5px; font-weight:600; cursor:pointer; border-radius:9px; padding:9px 13px;
+    border:1px solid transparent; transition:.15s; }
+  .run{ background:var(--gold); color:#1a1206; flex:1; }
+  .run:hover{ filter:brightness(1.08);}
+  .ghost{ background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.14); color:#cfd6e6;}
+  .ghost:hover{ border-color:var(--gold); color:#fff;}
+  .hint{ font-size:11px; color:#7a8299; margin-top:9px; line-height:1.5;}
+  .hint b{ color:var(--gold); font-weight:600;}
+  #err{ display:none; margin-top:8px; font-size:11.5px; color:#ff9d9d; background:rgba(255,0,0,.07);
+    border:1px solid rgba(255,80,80,.3); border-radius:8px; padding:7px 9px; white-space:pre-wrap;
+    font-family:ui-monospace,monospace;}
+  #stat{ position:fixed; z-index:5; right:14px; top:14px; font-size:11px; color:#6f7891; text-align:right;
+    line-height:1.6; user-select:none;}
+  #stat b{ color:var(--gold);}
+  /* modal */
+  #ov{ position:fixed; inset:0; z-index:20; background:rgba(2,4,9,.72); backdrop-filter:blur(4px);
+    display:none; align-items:center; justify-content:center; padding:20px;}
+  #ov.show{ display:flex;}
+  .card{ background:#0a0e18; border:1px solid var(--line); border-radius:16px; max-width:620px; width:100%;
+    max-height:86vh; overflow:auto; padding:22px 22px 20px; box-shadow:0 30px 80px rgba(0,0,0,.6);}
+  .card h2{ font-size:16px; color:var(--gold); margin-bottom:6px; letter-spacing:.01em;}
+  .card p{ font-size:13px; color:#aab2c6; line-height:1.6; margin-bottom:12px;}
+  .card pre{ background:#05070d; border:1px solid rgba(255,255,255,.1); border-radius:9px; padding:12px;
+    font-size:11.5px; color:#bfe8d0; overflow:auto; white-space:pre-wrap; line-height:1.5; max-height:300px;
+    font-family:ui-monospace,monospace;}
+  .card .btns{ margin-top:14px;}
+  .x{ position:absolute; }
+  @media (max-width:520px){ #stat{ display:none;} }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="brand">AI PARTICLE FIELD<small>near-phi.github.io · type it, watch reality move</small></div>
+<div id="stat"><span id="fps">–</span> fps · <span id="cnt">0</span> particles<br><b id="pname">spiral galaxy</b></div>
+
+<div id="dock">
+  <div class="dhead" id="dhead"><b>◇ Particle console</b><span class="chev">▾</span></div>
+  <div class="dbody">
+    <div class="presets" id="presets"></div>
+    <textarea id="code" spellcheck="false" placeholder="Paste the code an LLM writes for you here (see &quot;Get the prompt&quot;), or tap a preset above."></textarea>
+    <div class="btns">
+      <button class="run" id="runBtn">▶ Run field</button>
+      <button class="ghost" id="promptBtn">Get the prompt</button>
+      <button class="ghost" id="shotBtn">Snapshot</button>
+    </div>
+    <div id="err"></div>
+    <div class="hint">Describe anything to Claude. <b>“a spiral galaxy collapsing into a black hole”</b>, <b>“a tesseract breathing in 4D”</b>. It writes the physics, you paste it back, 24,000 particles obey.</div>
+  </div>
+</div>
+
+<div id="ov">
+  <div class="card">
+    <h2>The prompt template</h2>
+    <p>Copy this, paste it into <b>Claude</b> or any LLM, then add one line at the end describing what you want. It returns a code block. Paste that block into the console and hit <b>Run field</b>.</p>
+    <pre id="promptText"></pre>
+    <div class="btns">
+      <button class="run" id="copyBtn">⧉ Copy prompt</button>
+      <button class="ghost" id="closeBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   AI PARTICLE FIELD — single file, no dependencies, WebGL2.
+   The LLM writes a SIM object; this engine runs it on N particles.
+   API the generated code must return (all optional except step):
+     { count, dims:2|3, trail:0..1, bg:[r,g,b],
+       init(p,i,n),  step(p,t,dt),  color(p,t)->[r,g,b] }
+   p = {x,y,z, vx,vy,vz, r,g,b, life, i}   (0..1 color, world units ~[-1,1])
+   ============================================================ */
+const cv = document.getElementById('gl');
+const gl = cv.getContext('webgl2', {antialias:false, alpha:false, premultipliedAlpha:false});
+if(!gl){ document.body.innerHTML='<p style="padding:40px;color:#e9c46a;font-family:sans-serif">This browser has no WebGL2. Open in Chrome, Edge, or Firefox.</p>'; }
+
+let DPR = Math.min(devicePixelRatio||1, 2);
+function resize(){ DPR=Math.min(devicePixelRatio||1,2); cv.width=innerWidth*DPR; cv.height=innerHeight*DPR;
+  gl.viewport(0,0,cv.width,cv.height); }
+addEventListener('resize', resize); resize();
+
+/* ---- shaders: additive glowing points, cheap 3D rotate+project ---- */
+const vs = `#version 300 es
+layout(location=0) in vec3 pos; layout(location=1) in vec3 col;
+uniform float uRot; uniform float uAspect; uniform float uSize; uniform int uDims;
+out vec3 vCol; out float vDepth;
+void main(){
+  vec3 p = pos;
+  if(uDims==3){
+    float c=cos(uRot), s=sin(uRot);
+    p = vec3(c*p.x + s*p.z, p.y, -s*p.x + c*p.z);       // yaw
+    float c2=cos(0.42), s2=sin(0.42);
+    p = vec3(p.x, c2*p.y - s2*p.z, s2*p.y + c2*p.z);     // fixed tilt
+  }
+  float persp = uDims==3 ? (1.0/(2.2 - p.z*0.9)) : 0.62;
+  vec2 sp = vec2(p.x*persp/uAspect, p.y*persp);
+  gl_Position = vec4(sp, 0.0, 1.0);
+  gl_PointSize = uSize * (uDims==3 ? (0.7+persp) : 1.0);
+  vCol = col; vDepth = uDims==3 ? (0.55+p.z*0.45) : 1.0;
+}`;
+const fs = `#version 300 es
+precision highp float; in vec3 vCol; in float vDepth; out vec4 o;
+void main(){
+  vec2 d = gl_PointCoord - 0.5;
+  float r = dot(d,d);
+  float a = exp(-r*7.0);           // soft radial glow
+  o = vec4(vCol*vDepth*a, a);
+}`;
+function sh(t,src){ const s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER,vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER,fs));
+gl.linkProgram(prog); gl.useProgram(prog);
+const uRot=gl.getUniformLocation(prog,'uRot'), uAspect=gl.getUniformLocation(prog,'uAspect'),
+      uSize=gl.getUniformLocation(prog,'uSize'), uDims=gl.getUniformLocation(prog,'uDims');
+
+/* ---- particle buffers ---- */
+let N=0, P=null, posBuf=null, colBuf=null, posArr=null, colArr=null, vao=null, SIM=null, DIMS=3, TRAIL=0.90, BG=[0,0,0];
+function alloc(n){
+  N=n; posArr=new Float32Array(N*3); colArr=new Float32Array(N*3);
+  P=new Array(N);
+  for(let i=0;i<N;i++) P[i]={x:0,y:0,z:0,vx:0,vy:0,vz:0,r:1,g:1,b:1,life:1,i:i};
+  if(vao) gl.deleteVertexArray(vao);
+  vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+  posBuf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,posBuf);
+  gl.bufferData(gl.ARRAY_BUFFER,posArr,gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+  colBuf=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,colBuf);
+  gl.bufferData(gl.ARRAY_BUFFER,colArr,gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,0,0);
+}
+
+/* ---- load a SIM object safely ---- */
+function loadSim(obj, name){
+  try{
+    SIM = obj;
+    DIMS = obj.dims===2?2:3;
+    TRAIL = (typeof obj.trail==='number')? Math.max(0,Math.min(0.985,obj.trail)) : 0.9;
+    BG = Array.isArray(obj.bg)? obj.bg : [0,0,0];
+    const n = Math.max(500, Math.min(60000, obj.count||24000));
+    alloc(n);
+    const t=0;
+    for(let i=0;i<N;i++){ const p=P[i]; p.life=1;
+      if(obj.init) obj.init(p,i,N);
+      if(obj.color){ const c=obj.color(p,t); if(c){p.r=c[0];p.g=c[1];p.b=c[2];} }
+    }
+    document.getElementById('cnt').textContent = N.toLocaleString();
+    document.getElementById('pname').textContent = name||'custom field';
+    showErr('');
+    return true;
+  }catch(e){ showErr('init error: '+e.message); return false; }
+}
+function showErr(m){ const e=document.getElementById('err'); if(!m){e.style.display='none';return;}
+  e.style.display='block'; e.textContent=m; }
+
+/* ---- the render / physics loop ---- */
+let last=performance.now(), rot=0, tSec=0, frames=0, fpsT=0, running=true;
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now; tSec+=dt; rot+=dt*0.18;
+  frames++; fpsT+=dt; if(fpsT>=0.5){ document.getElementById('fps').textContent=Math.round(frames/fpsT); frames=0; fpsT=0; }
+
+  if(SIM){
+    const step=SIM.step, col=SIM.color;
+    for(let i=0;i<N;i++){
+      const p=P[i];
+      if(step){ try{ step(p,tSec,dt);}catch(e){} }
+      // integrate if the sim set velocities but didn't move position itself
+      posArr[i*3]=p.x; posArr[i*3+1]=p.y; posArr[i*3+2]=p.z;
+      if(col){ const c=col(p,tSec); if(c){p.r=c[0];p.g=c[1];p.b=c[2];} }
+      colArr[i*3]=p.r; colArr[i*3+1]=p.g; colArr[i*3+2]=p.b;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER,posBuf); gl.bufferSubData(gl.ARRAY_BUFFER,0,posArr);
+    gl.bindBuffer(gl.ARRAY_BUFFER,colBuf); gl.bufferSubData(gl.ARRAY_BUFFER,0,colArr);
+  }
+
+  // fade previous frame for trails
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.disable(gl.DEPTH_TEST);
+  gl.colorMask(true,true,true,true);
+  // paint a translucent black quad by clearing with low alpha via blend trick:
+  fadeQuad(1.0-TRAIL);
+
+  // additive draw
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  gl.useProgram(prog);
+  gl.uniform1f(uRot, rot); gl.uniform1f(uAspect, cv.width/cv.height);
+  gl.uniform1f(uSize, 2.2*DPR); gl.uniform1i(uDims, DIMS);
+  gl.bindVertexArray(vao);
+  if(N) gl.drawArrays(gl.POINTS,0,N);
+
+  if(running) requestAnimationFrame(frame);
+}
+
+/* fullscreen fade quad (для trails) */
+let fq=null,fqProg=null,fqU=null;
+function initFade(){
+  const v=`#version 300 es
+  const vec2 v[3]=vec2[3](vec2(-1.,-1.),vec2(3.,-1.),vec2(-1.,3.));
+  void main(){ gl_Position=vec4(v[gl_VertexID],0.,1.); }`;
+  const f=`#version 300 es
+  precision highp float; uniform vec4 uc; out vec4 o; void main(){ o=uc; }`;
+  fqProg=gl.createProgram();
+  gl.attachShader(fqProg,sh(gl.VERTEX_SHADER,v)); gl.attachShader(fqProg,sh(gl.FRAGMENT_SHADER,f));
+  gl.linkProgram(fqProg); fqU=gl.getUniformLocation(fqProg,'uc');
+  fq=gl.createVertexArray();
+}
+function fadeQuad(alpha){
+  gl.useProgram(fqProg); gl.bindVertexArray(fq);
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+  gl.uniform4f(fqU, BG[0],BG[1],BG[2], alpha);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+initFade();
+
+/* =========================== PRESETS =========================== */
+const PI2=Math.PI*2, rnd=Math.random;
+const PRESETS = {
+ "spiral galaxy":{
+   count:24000, dims:3, trail:0.93, bg:[0.01,0.01,0.03],
+   init(p,i,n){ const arm=(i%3)/3*PI2; const r=Math.pow(rnd(),0.6);
+     const a=arm + r*5.0 + (rnd()-0.5)*0.4; const rad=r*1.05;
+     p.x=Math.cos(a)*rad; p.z=Math.sin(a)*rad; p.y=(rnd()-0.5)*0.08*(1-r);
+     const sp=0.9/Math.sqrt(rad+0.05); p.vx=-Math.sin(a)*sp; p.vz=Math.cos(a)*sp;
+     p._r=rad; },
+   step(p,t,dt){ const rad=Math.hypot(p.x,p.z)+0.02; const g=0.45/(rad*rad);
+     const a=Math.atan2(p.z,p.x); p.vx-=Math.cos(a)*g*dt; p.vz-=Math.sin(a)*g*dt;
+     p.x+=p.vx*dt; p.z+=p.vz*dt; p.y+=p.vy*dt; },
+   color(p,t){ const rad=Math.hypot(p.x,p.z); return [1.0-rad*0.4, 0.55+rad*0.2, 0.35+rad*0.6]; }
+ },
+ "tesseract 4D":{
+   count:20000, dims:3, trail:0.88, bg:[0.01,0.008,0.02],
+   init(p,i,n){ p.i=i; const e=i%16; // 4D hypercube vertices interpolated on edges
+     const b=k=>((e>>k)&1)?1:-1; p._v=[b(0),b(1),b(2),b(3)]; p._f=rnd(); },
+   step(p,t,dt){ const w=p._v[3]; const rot=t*0.6; // rotate in x-w and y-z planes
+     const c=Math.cos(rot),s=Math.sin(rot);
+     let x=p._v[0]*0.6, y=p._v[1]*0.6, z=p._v[2]*0.6, ww=w*0.6;
+     let X=c*x - s*ww, W=s*x + c*ww; let Y=c*y - s*z, Z=s*y + c*z;
+     const k=1.0/(2.0 - W*0.8); const jit=Math.sin(t*3+p.i)*0.02;
+     p.x=X*k*1.4 + jit; p.y=Y*k*1.4; p.z=Z*k*1.4; },
+   color(p,t){ const h=(p._f+t*0.05)%1; return hsv(h,0.6,1); }
+ },
+ "black hole":{
+   count:26000, dims:3, trail:0.95, bg:[0,0,0.01],
+   init(p,i,n){ const a=rnd()*PI2, r=0.4+rnd()*0.9; p.x=Math.cos(a)*r; p.z=Math.sin(a)*r;
+     p.y=(rnd()-0.5)*0.05; const sp=0.8/Math.sqrt(r); p.vx=-Math.sin(a)*sp; p.vz=Math.cos(a)*sp; },
+   step(p,t,dt){ let r=Math.hypot(p.x,p.z)+0.001; if(r<0.06){ const a=rnd()*PI2,rr=0.9+rnd()*0.3;
+       p.x=Math.cos(a)*rr; p.z=Math.sin(a)*rr; const sp=0.8/Math.sqrt(rr); p.vx=-Math.sin(a)*sp; p.vz=Math.cos(a)*sp; r=rr; }
+     const g=0.3/(r*r); const a=Math.atan2(p.z,p.x);
+     p.vx-=Math.cos(a)*g*dt; p.vz-=Math.sin(a)*g*dt; p.vx*=0.999; p.vz*=0.999;
+     p.x+=p.vx*dt; p.z+=p.vz*dt; },
+   color(p,t){ const r=Math.hypot(p.x,p.z); const h=r<0.15?0.08:(0.55+r*0.15); return hsv(h,0.85,r<0.12?1.4:0.9); }
+ },
+ "strange attractor":{
+   count:22000, dims:3, trail:0.965, bg:[0.008,0.01,0.02],
+   init(p,i,n){ p.x=(rnd()-0.5)*0.1; p.y=(rnd()-0.5)*0.1; p.z=(rnd()-0.5)*0.1; p._h=i/n; },
+   step(p,t,dt){ const a=10,b=28,c=8/3, s=dt*0.55; // Lorenz, scaled to view
+     const X=p.x*18, Y=p.y*18, Z=(p.z*18)+25;
+     const dx=a*(Y-X), dy=X*(b-Z)-Y, dz=X*Y-c*Z;
+     p.x+=dx*s/18; p.y+=dy*s/18; p.z+=(dz*s)/18; },
+   color(p,t){ return hsv((p._h+t*0.03)%1,0.55,1); }
+ },
+ "wave lattice":{
+   count:26000, dims:3, trail:0.82, bg:[0.01,0.012,0.025],
+   init(p,i,n){ const s=Math.ceil(Math.sqrt(n)); p._u=(i%s)/s-0.5; p._v=(Math.floor(i/s)/s)-0.5; },
+   step(p,t,dt){ const u=p._u*2, v=p._v*2; p.x=u*0.95; p.z=v*0.95;
+     p.y=0.32*Math.sin(u*5+t*1.5)*Math.cos(v*5+t*1.2); },
+   color(p,t){ const h=(p.y*0.6+0.55+t*0.02)%1; return hsv((h+1)%1,0.5,0.6+p.y+0.4); }
+ }
+};
+function hsv(h,s,v){ h=(h%1+1)%1; const i=Math.floor(h*6),f=h*6-i,pp=v*(1-s),q=v*(1-f*s),tt=v*(1-(1-f)*s);
+  switch(i%6){case 0:return[v,tt,pp];case 1:return[q,v,pp];case 2:return[pp,v,tt];
+   case 3:return[pp,q,v];case 4:return[tt,pp,v];default:return[v,pp,q];} }
+
+/* build preset chips */
+const presetWrap=document.getElementById('presets'); let curChip=null;
+Object.keys(PRESETS).forEach((k,idx)=>{
+  const c=document.createElement('div'); c.className='chip'+(idx===0?' on':''); c.textContent=k;
+  c.onclick=()=>{ if(curChip)curChip.classList.remove('on'); c.classList.add('on'); curChip=c;
+    loadSim(structuredCloneSafe(PRESETS[k]),k); };
+  presetWrap.appendChild(c); if(idx===0) curChip=c;
+});
+function structuredCloneSafe(o){ // presets hold functions -> shallow copy, reuse fns
+  return Object.assign({},o); }
+
+/* =========================== UI wiring =========================== */
+const dock=document.getElementById('dock');
+document.getElementById('dhead').onclick=()=>dock.classList.toggle('min');
+document.getElementById('runBtn').onclick=()=>{
+  const src=document.getElementById('code').value.trim();
+  if(!src){ showErr('Paste code first, or tap a preset.'); return; }
+  runUserCode(src);
+};
+function runUserCode(src){
+  try{
+    // accept: a bare object, "const sim = {...}", or "return {...}", or ```js fences```
+    let s=src.replace(/```[a-z]*\n?/gi,'').trim();
+    let sim;
+    const f=new Function('hsv','PI2', `"use strict"; let SIM=null;\n try{ ${/return\b/.test(s)?s:'SIM = ('+s+')'} ; if(typeof SIM==='undefined'||SIM===null){ ${s.startsWith('{')?'SIM='+s:''} } }catch(e){ throw e; } return SIM;`);
+    sim=f(hsv,PI2);
+    if(!sim || typeof sim!=='object'){ showErr('Code did not return a SIM object. It needs at least { step(p,t,dt){...} }.'); return; }
+    if(curChip){ curChip.classList.remove('on'); curChip=null; }
+    loadSim(sim,'custom field');
+    dock.classList.add('min');
+  }catch(e){ showErr('parse error: '+e.message); }
+}
+
+/* snapshot */
+document.getElementById('shotBtn').onclick=()=>{
+  const url=cv.toDataURL('image/png'); const a=document.createElement('a');
+  a.href=url; a.download='ai-particle-field.png'; a.click();
+};
+
+/* pointer drag = manual yaw nudge */
+let drag=false,lx=0;
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;});
+addEventListener('pointerup',()=>drag=false);
+addEventListener('pointermove',e=>{ if(drag){ rot+=(e.clientX-lx)*0.005; lx=e.clientX; }});
+
+/* prompt modal */
+const PROMPT_TEMPLATE =
+`You are writing physics for a browser particle engine called AI Particle Field.
+Return ONLY a JavaScript object literal (no markdown, no explanation) matching this API:
+
+{
+  count: 24000,        // 500..60000 particles
+  dims: 3,             // 2 or 3
+  trail: 0.9,          // 0..0.98  (higher = longer light trails)
+  bg: [0.01,0.01,0.03],// background rgb 0..1
+  init(p, i, n){ /* set starting p.x p.y p.z p.vx p.vy p.vz, world units ~ -1..1 */ },
+  step(p, t, dt){ /* update p each frame. t=seconds, dt=frame time. move p.x etc. */ },
+  color(p, t){ return [r,g,b]; }  // 0..1, optional. helper hsv(h,s,v) is available.
+}
+
+Each p has: x,y,z, vx,vy,vz, r,g,b, life, i (index). You may stash extra fields on p (e.g. p._seed).
+Keep step() cheap (no allocations, no console). Make it visually stunning: motion never stops,
+vivid saturated color, the form fills the view. hsv(h,s,v) returns [r,g,b].
+
+Now write the object for this:  `;
+document.getElementById('promptText').textContent=PROMPT_TEMPLATE+'"a spiral galaxy collapsing into a black hole"';
+const ov=document.getElementById('ov');
+document.getElementById('promptBtn').onclick=()=>ov.classList.add('show');
+document.getElementById('closeBtn').onclick=()=>ov.classList.remove('show');
+ov.addEventListener('click',e=>{ if(e.target===ov) ov.classList.remove('show'); });
+document.getElementById('copyBtn').onclick=async()=>{
+  try{ await navigator.clipboard.writeText(document.getElementById('promptText').textContent);
+    document.getElementById('copyBtn').textContent='✓ Copied'; setTimeout(()=>document.getElementById('copyBtn').textContent='⧉ Copy prompt',1500);
+  }catch(e){ /* fallback */ const t=document.getElementById('promptText');
+    const r=document.createRange(); r.selectNode(t); getSelection().removeAllRanges(); getSelection().addRange(r); }
+};
+
+/* ---- boot ---- */
+gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+loadSim(structuredCloneSafe(PRESETS["spiral galaxy"]),"spiral galaxy");
+requestAnimationFrame(frame);
+
+/* capture hook for the render pipeline (?capture=1) */
+window.studio = { presets:Object.keys(PRESETS),
+  setPreset:k=>{ if(PRESETS[k]) loadSim(structuredCloneSafe(PRESETS[k]),k); },
+  params:{} };
+if(new URLSearchParams(location.search).has('capture')){ dock.style.display='none';
+  document.querySelector('.brand').style.opacity=0.0; document.getElementById('stat').style.display='none'; }
+</script>
+</body>
+</html>
