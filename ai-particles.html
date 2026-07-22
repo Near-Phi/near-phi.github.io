@@ -395,7 +395,9 @@ window.studio = { presets:Object.keys(PRESETS),
   setPreset:k=>{ if(PRESETS[k]) loadSim(structuredCloneSafe(PRESETS[k]),k); },
   params:{} };
 if(new URLSearchParams(location.search).has('capture')){ dock.style.display='none';
-  document.querySelector('.brand').style.opacity=0.0; document.getElementById('stat').style.display='none'; }
+  document.querySelector('.brand').style.opacity=0.0; document.getElementById('stat').style.display='none';
+  // cinematic frame-filling preset for auto-captured clips (galaxy is sparse mid-orbit)
+  loadSim(structuredCloneSafe(PRESETS["strange attractor"]),"strange attractor"); }
 </script>
 </body>
 </html>
